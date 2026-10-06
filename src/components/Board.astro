@@ -23,7 +23,7 @@ const Title = heading;
   )}
   <div class="flaps" aria-hidden="true">
     <span class="digits" data-flap>
-      {chars.map((c) => <span class:list={["ch", { sep: c === "." || c === "," || c === " " }]}>{c}</span>)}
+      {chars.map((c) => <span class:list={["ch", { sep: ".,: ′″".includes(c) }]}>{c}</span>)}
     </span>
     <span class="flap-unit">{unit}</span>
   </div>

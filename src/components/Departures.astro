@@ -21,7 +21,7 @@ const tiles = (s: string) => [...s.toUpperCase()];
             </span>
             <span class="holder" aria-hidden="true">{r.holder}</span>
             <span class="tiles t-val" aria-hidden="true">
-              {[...v.value].map((c) => <span class:list={["ch", { gap: c === " ", punct: c === "." || c === "," }]}>{c}</span>)}
+              {[...v.value].map((c) => <span class:list={["ch", { gap: c === " ", punct: ".,:′″".includes(c) }]}>{c}</span>)}
               <span class="unit">{v.unit}</span>
             </span>
           </a>

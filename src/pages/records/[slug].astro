@@ -3,7 +3,7 @@ import Base from "../../layouts/Base.astro";
 import Board from "../../components/Board.astro";
 import RecordList from "../../components/RecordList.astro";
 import Perspective from "../../components/Perspective.astro";
-import { getRecord, getRecords, getCategory, formatValue, formatDate, cacheFor } from "../../lib/data";
+import { getRecord, getRecords, getCategory, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
 if (!record) {
@@ -17,9 +17,12 @@ if (record?.categories) {
 cacheFor(3600, Astro.response);
 
 const v = record ? formatValue(record) : null;
-const title = record ? `${record.title}: ${record.holder}, ${v!.value} ${v!.unit} | Broken Records` : "Record not found | Broken Records";
+const mv = record ? formatMetric(record) : null;
+const usText = v ? `${v.value}${v.unit ? " " + v.unit : ""}` : "";
+const metricText = mv ? `${mv.value}${mv.unit ? " " + mv.unit : ""}` : "";
+const title = record ? `${record.title}: ${record.holder}, ${usText} | Broken Records` : "Record not found | Broken Records";
 const description = record
-  ? `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${record.value_text ?? `${v!.value} ${v!.unit}`}. Sources and last-checked date included.`
+  ? `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${usText}. Sources and last-checked date included.`
   : "This record does not exist.";
 
 const jsonLd = record && {
@@ -38,7 +41,9 @@ const jsonLd = record && {
 const facts = record
   ? ([
       ["Holder", record.holder],
-      ["Record", record.value_text ? `${record.value_text}` : `${v!.value} ${v!.unit}`],
+      ["Record", usText],
+      ["Metric", metricText !== usText ? metricText : null],
+      ["Exact figure", record.value_text && record.value_text !== usText && record.value_text !== metricText ? record.value_text : null],
       ["Location", record.location],
       ["Date set", formatDate(record.achieved_on)],
       ["Recognized by", record.governing_body],

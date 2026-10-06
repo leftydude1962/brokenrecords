@@ -5,10 +5,22 @@ import RecordList from "../components/RecordList.astro";
 import { getCategories, getRecords, cacheFor } from "../lib/data";
 
 const BOARD_ROWS = 8;
-const [categories, records] = await Promise.all([getCategories(), getRecords({ limit: 60 })]);
+const [categories, records] = await Promise.all([getCategories(), getRecords()]);
 const live = categories.filter((c) => (c.count ?? 0) > 0);
-const onBoard = records.slice(0, BOARD_ROWS);
-const rest = records.slice(BOARD_ROWS);
+// The board shows one record from each category, so the first screen covers sport, nature, speed and space.
+// The pick rotates daily, so returning visitors see a different board.
+const day = Math.floor(Date.now() / 86_400_000);
+const byCat = new Map<string, typeof records>();
+for (const r of records) {
+  const k = r.categories?.slug ?? "other";
+  byCat.set(k, [...(byCat.get(k) ?? []), r]);
+}
+const groups = [...byCat.values()];
+const start = groups.length ? day % groups.length : 0;
+const onBoard = [...groups.slice(start), ...groups.slice(0, start)]
+  .slice(0, BOARD_ROWS)
+  .map((list) => list[day % list.length]);
+const rest = [...records].sort((a, b) => a.title.localeCompare(b.title));
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -53,7 +65,7 @@ const jsonLd = {
 
     {rest.length > 0 && (
       <section class="block" aria-labelledby="latest">
-        <h2 id="latest">More records</h2>
+        <h2 id="latest">All {records.length} records</h2>
         <RecordList records={rest} showCategory />
       </section>
     )}

@@ -1,27 +1,27 @@
 ---
 // "Put it in perspective": compares a record with things people already know.
 // Picks a view from the record itself: a height chart, a length chart, or a lifetime timeline.
-import { formatValue, type RecordRow } from "../lib/data";
+import { formatValue, lengthUS, type RecordRow } from "../lib/data";
 interface Props { record: RecordRow }
 const { record } = Astro.props;
 
-type Ref = { name: string; m: number };
+type Ref = { name: string; m: number; the?: string };
 const PERSON_HEIGHTS: Ref[] = [
-  { name: "Average adult man", m: 1.75 },
-  { name: "Standard US door", m: 2.03 },
-  { name: "Basketball hoop", m: 3.05 },
+  { name: "Average adult man", m: 1.7526 },
+  { name: "Standard US door", m: 2.032 },
+  { name: "Basketball hoop", m: 3.048 },
 ];
 const STRUCTURE_HEIGHTS: Ref[] = [
   { name: "Statue of Liberty, with pedestal", m: 93 },
   { name: "Great Pyramid of Giza", m: 139 },
   { name: "Eiffel Tower", m: 330 },
-  { name: "Empire State Building", m: 443 },
+  { name: "Empire State Building", m: 443.2 },
 ];
 const LENGTHS: Ref[] = [
-  { name: "Golden Gate Bridge", m: 2737 },
-  { name: "Manhattan, end to end", m: 21600 },
-  { name: "English Channel, narrowest crossing", m: 33300 },
-  { name: "A marathon", m: 42195 },
+  { name: "Golden Gate Bridge", m: 2737, the: "the Golden Gate Bridge" },
+  { name: "Manhattan, end to end", m: 21600, the: "Manhattan" },
+  { name: "English Channel, narrowest crossing", m: 33300, the: "the English Channel at its narrowest" },
+  { name: "A marathon", m: 42195, the: "a marathon" },
 ];
 const EVENTS: { year: number; text: string }[] = [
   { year: 1876, text: "Bell patents the telephone" },
@@ -40,8 +40,15 @@ const kind =
   : record.unit === "m" && /long|length|distance/.test(title) ? "length"
   : null;
 
-const fmtM = (m: number) =>
-  m >= 10000 ? `${(m / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })} km` : `${m.toLocaleString("en-US", { maximumFractionDigits: 2 })} m`;
+// Chart labels and captions use US units, matching the rest of the site.
+const vertical = kind === "height";
+const fmtM = (m: number) => { const u = lengthUS(m, vertical); return u.unit ? `${u.value} ${u.unit}` : u.value; };
+// A height difference in words, for example "3 ft 2 in".
+const ftIn = (m: number) => {
+  const total = Math.round(m / 0.0254);
+  const ft = Math.floor(total / 12), inch = total % 12;
+  return ft ? `${ft} ft ${inch} in` : `${inch} in`;
+};
 const times = (a: number, b: number) => (a / b).toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 let bars: Ref[] = [];
@@ -51,12 +58,16 @@ if (kind === "height" || kind === "length") {
   bars = pool.filter((r) => r.m <= n * 1.15).slice(-4);
   // Compare against the biggest reference that the record actually beats.
   const anchor = bars.filter((b) => b.m <= n).pop();
-  if (anchor && kind === "height" && n < 10) {
-    line = `${record.holder} stood ${Math.round((n - pool[0].m) * 100)} cm taller than the average adult man.`;
+  if (anchor && kind === "height" && n < 10 && /person/.test(title)) {
+    line = `${record.holder} stood ${ftIn(n - pool[0].m)} taller than the average adult man.`;
+  } else if (anchor && kind === "height" && n < 10) {
+    line = `At ${fmtM(n)}, that is ${ftIn(n - pool[0].m)} above the head of an average adult man.`;
   } else if (anchor && kind === "height") {
     line = `At ${fmtM(n)}, it is ${times(n, anchor.m)} times the height of the ${anchor.name.replace(/,.*$/, "")}.`;
   } else if (anchor) {
-    line = `At ${fmtM(n)}, it is as long as ${times(n, anchor.m)} ${anchor.name === "A marathon" ? "marathons" : `copies of the ${anchor.name.replace(/,.*$/, "")}`} laid end to end.`;
+    line = anchor.name === "A marathon"
+      ? `At ${fmtM(n)}, it is as long as ${times(n, anchor.m)} marathons laid end to end.`
+      : `At ${fmtM(n)}, it is ${times(n, anchor.m)} times the length of ${anchor.the}.`;
   }
 }
 const max = Math.max(n, ...bars.map((b) => b.m));
