@@ -1,0 +1,27 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getCategories, cacheFor } from "../../lib/data";
+const categories = await getCategories();
+cacheFor(3600, Astro.response);
+---
+<Base title="All categories | Broken Records" description="Browse world records by category: sport, buildings, bridges, people, animals and more.">
+  <div class="wrap">
+    <h1 class="h">Categories</h1>
+    <ul class="cats">
+      {categories.map((c) => (
+        <li>
+          <a href={`/category/${c.slug}`}>{c.name}</a>
+          <span class="count">{c.count ? `${c.count} ${c.count === 1 ? "record" : "records"}` : "Coming soon"}</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+</Base>
+
+<style>
+  .h { padding-top: 2.5rem; margin-bottom: 1.5rem; }
+  .cats { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
+  .cats li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.85rem 0.25rem; border-bottom: 1px solid var(--rule); }
+  .cats a { font: 700 1.2rem/1.3 var(--display); font-stretch: 100%; }
+  .count { color: var(--ink-soft); font-size: 0.95rem; }
+</style>

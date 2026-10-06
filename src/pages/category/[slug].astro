@@ -1,0 +1,41 @@
+---
+import Base from "../../layouts/Base.astro";
+import RecordList from "../../components/RecordList.astro";
+import { getCategory, getRecords, cacheFor } from "../../lib/data";
+
+const category = await getCategory(Astro.params.slug!);
+if (!category) Astro.response.status = 404;
+const records = category ? await getRecords({ categoryId: category.id }) : [];
+cacheFor(3600, Astro.response);
+
+const title = category ? `${category.name} world records | Broken Records` : "Category not found | Broken Records";
+const description = category
+  ? `Current world records in ${category.name.toLowerCase()}, with holders, values, and sources.`
+  : "This category does not exist.";
+---
+<Base title={title} description={description} noindex={!category || records.length === 0}>
+  <div class="wrap">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/category">Categories</a></nav>
+    {category ? (
+      <>
+        <h1>{category.name} records</h1>
+        {records.length > 0 ? (
+          <div class="list"><RecordList records={records} /></div>
+        ) : (
+          <p class="empty">No {category.name.toLowerCase()} records are published yet. <a href="/">See all records</a>.</p>
+        )}
+      </>
+    ) : (
+      <>
+        <h1>No category at this address.</h1>
+        <p class="empty"><a href="/category">See all categories</a>.</p>
+      </>
+    )}
+  </div>
+</Base>
+
+<style>
+  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: var(--ink-soft); }
+  .list { margin-top: 2rem; }
+  .empty { margin-top: 1.5rem; max-width: 55ch; color: var(--ink-soft); }
+</style>

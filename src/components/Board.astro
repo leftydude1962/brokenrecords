@@ -1,0 +1,27 @@
+---
+import { formatValue, formatDate, type RecordRow } from "../lib/data";
+interface Props {
+  record: RecordRow;
+  heading?: "h1" | "h2" | "p";
+  link?: boolean;
+}
+const { record, heading = "p", link = false } = Astro.props;
+const { value, unit } = formatValue(record);
+const chars = [...value];
+const year = record.achieved_on ? formatDate(record.achieved_on) : null;
+const meta = [record.location, year ? `since ${year}` : null].filter(Boolean).join(", ");
+const Title = heading;
+---
+<section class="board" aria-label={`${record.title}: ${value} ${unit}, ${record.holder ?? ""}`}>
+  <Title class="board-title">
+    {link ? <a href={`/records/${record.slug}`} style="color:inherit">{record.title}</a> : record.title}
+  </Title>
+  <div class="flaps" aria-hidden="true">
+    <span class="digits" data-flap>
+      {chars.map((c) => <span class:list={["ch", { sep: c === "." || c === "," || c === " " }]}>{c}</span>)}
+    </span>
+    <span class="flap-unit">{unit}</span>
+  </div>
+  {record.holder && <p class="board-holder">{record.holder}</p>}
+  {meta && <p class="board-meta">{meta}</p>}
+</section>

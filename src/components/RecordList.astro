@@ -1,0 +1,39 @@
+---
+import { formatValue, type RecordRow } from "../lib/data";
+interface Props { records: RecordRow[]; showCategory?: boolean }
+const { records, showCategory = false } = Astro.props;
+---
+<ul class="rlist">
+  {records.map((r) => {
+    const v = formatValue(r);
+    return (
+      <li>
+        <a class="rlink" href={`/records/${r.slug}`}>
+          <span class="rtitle">{r.title}</span>
+          <span class="rholder">
+            {r.holder}{showCategory && r.categories ? <span class="rcat"> in {r.categories.name}</span> : null}
+          </span>
+          <span class="rval">{v.value}<span class="runit"> {v.unit}</span></span>
+        </a>
+      </li>
+    );
+  })}
+</ul>
+
+<style>
+  .rlist { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--ink); }
+  .rlist li { border-bottom: 1px solid var(--rule); }
+  .rlink {
+    display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t v" "h v";
+    gap: 0.1rem 1rem; padding: 0.9rem 0.25rem; color: var(--ink); text-decoration: none;
+  }
+  .rlink:hover .rtitle { text-decoration: underline; }
+  .rtitle { grid-area: t; font: 700 1.15rem/1.25 var(--display); font-stretch: 100%; }
+  .rholder { grid-area: h; color: var(--ink-soft); font-size: 0.98rem; }
+  .rcat { color: var(--ink-soft); }
+  .rval {
+    grid-area: v; align-self: center; text-align: right; white-space: nowrap;
+    font: 800 1.5rem/1 var(--display); font-stretch: 80%; font-variant-numeric: tabular-nums;
+  }
+  .runit { font-weight: 600; font-size: 0.95rem; color: var(--ink-soft); font-stretch: 100%; }
+</style>

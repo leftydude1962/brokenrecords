@@ -1,0 +1,108 @@
+---
+import Base from "../../layouts/Base.astro";
+import Board from "../../components/Board.astro";
+import RecordList from "../../components/RecordList.astro";
+import { getRecord, getRecords, getCategory, formatValue, formatDate, cacheFor } from "../../lib/data";
+
+const record = await getRecord(Astro.params.slug!);
+if (!record) {
+  Astro.response.status = 404;
+}
+let related: Awaited<ReturnType<typeof getRecords>> = [];
+if (record?.categories) {
+  const cat = await getCategory(record.categories.slug);
+  if (cat) related = (await getRecords({ categoryId: cat.id })).filter((r) => r.slug !== record.slug).slice(0, 6);
+}
+cacheFor(3600, Astro.response);
+
+const v = record ? formatValue(record) : null;
+const title = record ? `${record.title}: ${record.holder}, ${v!.value} ${v!.unit} | Broken Records` : "Record not found | Broken Records";
+const description = record
+  ? `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${record.value_text ?? `${v!.value} ${v!.unit}`}. Sources and last-checked date included.`
+  : "This record does not exist.";
+
+const jsonLd = record && {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Broken Records", item: "https://brokenrecords.com/" },
+    record.categories && {
+      "@type": "ListItem", position: 2, name: record.categories.name,
+      item: `https://brokenrecords.com/category/${record.categories.slug}`,
+    },
+    { "@type": "ListItem", position: 3, name: record.title, item: `https://brokenrecords.com/records/${record.slug}` },
+  ].filter(Boolean),
+};
+
+const facts = record
+  ? ([
+      ["Holder", record.holder],
+      ["Record", record.value_text ? `${record.value_text}` : `${v!.value} ${v!.unit}`],
+      ["Location", record.location],
+      ["Date set", formatDate(record.achieved_on)],
+      ["Recognized by", record.governing_body],
+      ["Last checked", formatDate(record.last_verified_at)],
+    ].filter(([, val]) => val) as [string, string][])
+  : [];
+---
+<Base title={title} description={description} noindex={!record} jsonLd={jsonLd}>
+  <div class="wrap">
+    {record ? (
+      <article>
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/">Home</a>
+          {record.categories && <> / <a href={`/category/${record.categories.slug}`}>{record.categories.name}</a></>}
+        </nav>
+        <h1 class="rec-h1">{record.title}</h1>
+        {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
+        <Board record={record} />
+
+        <dl class="facts">
+          {facts.map(([k, val]) => (<div><dt>{k}</dt><dd>{val}</dd></div>))}
+        </dl>
+
+        <section class="sources" aria-labelledby="src">
+          <h2 id="src">Sources</h2>
+          <ul>
+            {record.record_sources.map((s) => (
+              <li>
+                <a href={s.url} rel="noopener" target="_blank">{s.publisher ?? new URL(s.url).hostname}</a>
+                {s.license && <span class="lic"> ({s.license})</span>}
+              </li>
+            ))}
+          </ul>
+          <p class="note">Spotted an error or a newer record? Email <a href="mailto:records@brokenrecords.com">records@brokenrecords.com</a> with a source link.</p>
+        </section>
+
+        {related.length > 0 && record.categories && (
+          <section class="related" aria-labelledby="rel">
+            <h2 id="rel">More {record.categories.name.toLowerCase()} records</h2>
+            <RecordList records={related} />
+          </section>
+        )}
+      </article>
+    ) : (
+      <section class="missing">
+        <h1>No record at this address.</h1>
+        <p>The link may be old, or the record may have been renamed. <a href="/">Browse all records</a> instead.</p>
+      </section>
+    )}
+  </div>
+</Base>
+
+<style>
+  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: var(--ink-soft); }
+  .rec-h1 { margin-bottom: 1.5rem; }
+  .flag { background: var(--red); color: #fff; display: inline-block; padding: 0.3rem 0.7rem; border-radius: 4px; margin: 0 0 1rem; font-family: var(--display); font-weight: 600; }
+  .facts { margin: 2rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 1.25rem 2rem; }
+  .facts div { border-top: 2px solid var(--ink); padding-top: 0.5rem; }
+  .facts dt { font: 600 0.9rem/1.3 var(--display); color: var(--ink-soft); }
+  .facts dd { margin: 0.2rem 0 0; font-size: 1.1rem; }
+  .sources, .related { margin-top: 3rem; }
+  .sources h2, .related h2 { margin-bottom: 0.75rem; }
+  .sources ul { margin: 0; padding-left: 1.2rem; }
+  .lic { color: var(--ink-soft); font-size: 0.95rem; }
+  .note { color: var(--ink-soft); max-width: 60ch; }
+  .missing { padding: 4rem 0; }
+  .missing p { max-width: 50ch; }
+</style>

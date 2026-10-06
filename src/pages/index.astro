@@ -1,0 +1,62 @@
+---
+import Base from "../layouts/Base.astro";
+import Board from "../components/Board.astro";
+import RecordList from "../components/RecordList.astro";
+import { getCategories, getRecords, cacheFor } from "../lib/data";
+
+const [categories, records] = await Promise.all([getCategories(), getRecords({ limit: 50 })]);
+const featured = records.find((r) => r.slug === "tallest-building") ?? records[0];
+const live = categories.filter((c) => (c.count ?? 0) > 0);
+const total = records.length;
+cacheFor(3600, Astro.response);
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Broken Records",
+  url: "https://brokenrecords.com",
+};
+---
+<Base
+  title="Broken Records: world records, kept current"
+  description="Look up world records in sport, buildings, nature and people. Every record links to its sources and shows when it was last checked."
+  jsonLd={jsonLd}
+>
+  <div class="wrap">
+    <section class="hero">
+      <h1>World records, kept current.</h1>
+      <p class="lede">
+        The fastest, tallest, longest and oldest, in one place. Every record links to its sources and shows the date we last checked it.
+      </p>
+      {featured && <Board record={featured} link />}
+    </section>
+
+    <section class="block" aria-labelledby="cats">
+      <h2 id="cats">Browse by category</h2>
+      <ul class="cats">
+        {live.map((c) => (
+          <li><a href={`/category/${c.slug}`}>{c.name}</a> <span class="count">{c.count} {c.count === 1 ? "record" : "records"}</span></li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="block" aria-labelledby="latest">
+      <h2 id="latest">All records</h2>
+      <p class="sub">{total} {total === 1 ? "record" : "records"} so far, most recently checked first.</p>
+      <RecordList records={records} showCategory />
+    </section>
+  </div>
+</Base>
+
+<style>
+  .hero { padding: 2.5rem 0 1rem; }
+  @media (min-width: 48rem) { .hero { padding: 4rem 0 1.5rem; } }
+  .hero h1 { max-width: 16ch; }
+  .lede { max-width: 54ch; font-size: 1.2rem; color: var(--ink-soft); margin: 1rem 0 2rem; }
+  .block { margin-top: 3.5rem; }
+  .block h2 { margin-bottom: 1rem; }
+  .sub { margin: -0.5rem 0 1rem; color: var(--ink-soft); }
+  .cats { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem 2rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+  .cats a { font: 700 1.2rem/1.3 var(--display); font-stretch: 100%; }
+  .count { color: var(--ink-soft); font-size: 0.95rem; white-space: nowrap; }
+</style>

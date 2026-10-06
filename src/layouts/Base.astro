@@ -1,0 +1,167 @@
+---
+interface Props {
+  title: string;
+  description: string;
+  noindex?: boolean;
+  jsonLd?: unknown;
+}
+const { title, description, noindex = false, jsonLd } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Broken Records" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
+      rel="stylesheet"
+    />
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-head">
+      <div class="wrap head-row">
+        <a class="wordmark" href="/">Broken Records</a>
+        <nav aria-label="Main">
+          <a href="/category">Categories</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-foot">
+      <div class="wrap">
+        <p>
+          Broken Records tracks recognized world records and links every entry to its sources. Each record shows the date we last checked it.
+          We are not an official certifying body.
+        </p>
+        <p class="fine">Record data from Wikidata (CC0) and the sources listed on each page.</p>
+      </div>
+    </footer>
+    <script>
+      // Split-flap: each character cycles through a few glyphs, then settles on its real value.
+      // The final text is already in the HTML, so search engines and screen readers never see the animation.
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduce) {
+        const glyphs = "0123456789ABCDEFGHJKMNPRSTUVWXYZ";
+        document.querySelectorAll<HTMLElement>("[data-flap] .ch").forEach((el, i) => {
+          const final = el.textContent ?? "";
+          if (final.trim() === "" || final === "." || final === ",") return;
+          const isDigit = /\d/.test(final);
+          let n = 6 + (i % 7) * 2;
+          el.classList.add("flipping");
+          const t = setInterval(() => {
+            if (n-- <= 0) {
+              clearInterval(t);
+              el.textContent = final;
+              el.classList.remove("flipping");
+              return;
+            }
+            el.textContent = isDigit
+              ? String(Math.floor(Math.random() * 10))
+              : glyphs[Math.floor(Math.random() * glyphs.length)];
+          }, 55);
+        });
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --paper: #eceff1;
+    --ink: #17212b;
+    --ink-soft: #4a5866;
+    --rule: #c7ced5;
+    --board: #1e2935;
+    --flap: #2b3947;
+    --amber: #f2b33d;
+    --red: #c8102e;
+    --link: #1d5c8f;
+    --display: "Archivo", "Arial Narrow", sans-serif;
+    --serif: "Source Serif 4", Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #121a22;
+      --ink: #e6ebef;
+      --ink-soft: #a3b0bc;
+      --rule: #2c3a47;
+      --board: #0d141b;
+      --flap: #1e2935;
+      --link: #8cc2ee;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 1.0625rem/1.65 var(--serif);
+  }
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1rem; }
+  @media (min-width: 48rem) { .wrap { padding: 0 2rem; } }
+  a { color: var(--link); text-underline-offset: 0.18em; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; border-radius: 2px; }
+  h1, h2, h3 { font-family: var(--display); line-height: 1.1; margin: 0; }
+  h1 { font-weight: 850; font-stretch: 112%; font-size: clamp(2rem, 1.3rem + 3vw, 3.4rem); letter-spacing: -0.015em; }
+  h2 { font-weight: 800; font-stretch: 100%; font-size: 1.5rem; }
+  .skip { position: absolute; left: -999px; }
+  .skip:focus { left: 1rem; top: 1rem; background: var(--amber); color: #000; padding: 0.5rem 0.75rem; z-index: 10; }
+
+  .site-head { border-bottom: 1px solid var(--rule); }
+  .head-row { display: flex; align-items: baseline; justify-content: space-between; padding-top: 1rem; padding-bottom: 1rem; }
+  .wordmark {
+    font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.25rem;
+    color: var(--ink); text-decoration: none; letter-spacing: -0.01em;
+  }
+  .site-head nav a { font-family: var(--display); font-weight: 600; color: var(--ink); text-decoration: none; }
+  .site-head nav a:hover { text-decoration: underline; }
+
+  main { padding-bottom: 4rem; }
+  .site-foot { border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 0.95rem; padding: 2rem 0 3rem; }
+  .site-foot p { max-width: 62ch; margin: 0 0 0.5rem; }
+  .site-foot .fine { font-size: 0.85rem; }
+
+  /* The timing board */
+  .board {
+    background: var(--board); color: #fff; border-radius: 6px;
+    padding: 1.25rem 1.25rem 1.1rem;
+  }
+  @media (min-width: 48rem) { .board { padding: 2rem 2.25rem 1.6rem; } }
+  .board-title { font-family: var(--display); font-weight: 600; font-stretch: 100%; color: #b9c4ce; font-size: 1rem; margin: 0 0 0.85rem; }
+  .flaps { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1rem; }
+  .digits { display: inline-flex; gap: 4px; }
+  .ch {
+    display: inline-block; min-width: 0.72em; text-align: center; position: relative;
+    background: var(--flap); color: var(--amber);
+    font: 800 clamp(2.6rem, 1.4rem + 6vw, 5.5rem)/1.15 var(--display); font-stretch: 75%;
+    font-variant-numeric: tabular-nums; padding: 0 0.08em; border-radius: 4px;
+  }
+  .ch::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--board); opacity: 0.85;
+  }
+  .ch.sep { background: none; min-width: 0.25em; padding: 0; }
+  .ch.sep::after { display: none; }
+  .ch.flipping { color: #c9922c; }
+  .flap-unit { font: 700 clamp(1.25rem, 1rem + 1.2vw, 2rem)/1 var(--display); color: #b9c4ce; padding-bottom: 0.5rem; }
+  .board-holder { font: 700 clamp(1.15rem, 1rem + 0.8vw, 1.6rem)/1.25 var(--display); font-stretch: 100%; margin: 1rem 0 0; color: #fff; }
+  .board-meta { margin: 0.25rem 0 0; color: #b9c4ce; font: 400 0.95rem/1.4 var(--serif); }
+</style>
