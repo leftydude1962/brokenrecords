@@ -1,13 +1,14 @@
 ---
 import Base from "../layouts/Base.astro";
-import Board from "../components/Board.astro";
+import Departures from "../components/Departures.astro";
 import RecordList from "../components/RecordList.astro";
 import { getCategories, getRecords, cacheFor } from "../lib/data";
 
-const [categories, records] = await Promise.all([getCategories(), getRecords({ limit: 50 })]);
-const featured = records.find((r) => r.slug === "tallest-building") ?? records[0];
+const BOARD_ROWS = 8;
+const [categories, records] = await Promise.all([getCategories(), getRecords({ limit: 60 })]);
 const live = categories.filter((c) => (c.count ?? 0) > 0);
-const total = records.length;
+const onBoard = records.slice(0, BOARD_ROWS);
+const rest = records.slice(BOARD_ROWS);
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -22,42 +23,62 @@ const jsonLd = {
   description="Look up world records in sport, buildings, nature and people. Every record links to its sources and shows when it was last checked."
   jsonLd={jsonLd}
 >
-  <div class="wrap">
-    <section class="hero">
-      <h1>World records, kept current.</h1>
-      <p class="lede">
-        The fastest, tallest, longest and oldest, in one place. Every record links to its sources and shows the date we last checked it.
+  <section class="band hero">
+    <div class="wrap">
+      <h1>World records, <span class="nowrap">kept current.</span></h1>
+      <p class="lede muted">
+        The fastest, tallest, longest and oldest, on one board. Every record links to its sources and shows the date we last checked it.
       </p>
-      {featured && <Board record={featured} link />}
-    </section>
+      <Departures records={onBoard} />
+      <p class="board-foot muted">Tap any row for the full record, the sources, and how it compares.</p>
+    </div>
+  </section>
 
+  <div class="wrap">
     <section class="block" aria-labelledby="cats">
       <h2 id="cats">Browse by category</h2>
       <ul class="cats">
         {live.map((c) => (
-          <li><a href={`/category/${c.slug}`}>{c.name}</a> <span class="count">{c.count} {c.count === 1 ? "record" : "records"}</span></li>
+          <li>
+            <a href={`/category/${c.slug}`}>
+              <span class="num">{c.count}</span>
+              <span class="cname">{c.name}</span>
+              <span class="cunit">{c.count === 1 ? "record" : "records"}</span>
+            </a>
+          </li>
         ))}
       </ul>
+      <p class="more"><a href="/category">See every category, including the ones on the way</a></p>
     </section>
 
-    <section class="block" aria-labelledby="latest">
-      <h2 id="latest">All records</h2>
-      <p class="sub">{total} {total === 1 ? "record" : "records"} so far, most recently checked first.</p>
-      <RecordList records={records} showCategory />
-    </section>
+    {rest.length > 0 && (
+      <section class="block" aria-labelledby="latest">
+        <h2 id="latest">More records</h2>
+        <RecordList records={rest} showCategory />
+      </section>
+    )}
   </div>
 </Base>
 
 <style>
-  .hero { padding: 2.5rem 0 1rem; }
-  @media (min-width: 48rem) { .hero { padding: 4rem 0 1.5rem; } }
-  .hero h1 { max-width: 16ch; }
-  .lede { max-width: 54ch; font-size: 1.2rem; color: var(--ink-soft); margin: 1rem 0 2rem; }
-  .hero :global(.board) { display: inline-block; min-width: min(100%, 30rem); max-width: 100%; }
+  .hero { padding-top: 2.5rem; padding-bottom: 3rem; }
+  @media (min-width: 48rem) { .hero { padding-top: 4rem; padding-bottom: 4.5rem; } }
+  .hero h1 { color: #fff; max-width: 18ch; font-size: clamp(2.3rem, 1.4rem + 4vw, 4.4rem); }
+  .nowrap { white-space: nowrap; }
+  .lede { max-width: 52ch; font-size: 1.2rem; margin: 1rem 0 2.25rem; }
+  .board-foot { font-size: 0.95rem; margin: 0.9rem 0 0; }
+
   .block { margin-top: 3.5rem; }
-  .block h2 { margin-bottom: 1rem; }
-  .sub { margin: -0.5rem 0 1rem; color: var(--ink-soft); }
-  .cats { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem 2rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
-  .cats a { font: 700 1.2rem/1.3 var(--display); font-stretch: 100%; }
-  .count { color: var(--ink-soft); font-size: 0.95rem; white-space: nowrap; }
+  .block h2 { margin-bottom: 1.25rem; }
+  .cats { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); border-top: 2px solid var(--ink); }
+  .cats li { border-bottom: 1px solid var(--rule); }
+  .cats a {
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 0.9rem;
+    padding: 1rem 0.5rem; color: var(--ink); text-decoration: none; align-items: end;
+  }
+  .cats a:hover .cname { text-decoration: underline; }
+  .num { grid-row: 1 / 3; font: 900 3.2rem/0.85 var(--display); font-stretch: 70%; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .cname { font: 800 1.35rem/1.1 var(--display); font-stretch: 105%; }
+  .cunit { color: var(--ink-soft); font-size: 0.9rem; }
+  .more { margin-top: 1rem; }
 </style>

@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import Board from "../../components/Board.astro";
 import RecordList from "../../components/RecordList.astro";
+import Perspective from "../../components/Perspective.astro";
 import { getRecord, getRecords, getCategory, formatValue, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
@@ -46,20 +47,26 @@ const facts = record
   : [];
 ---
 <Base title={title} description={description} noindex={!record} jsonLd={jsonLd}>
-  <div class="wrap">
-    {record ? (
-      <article>
-        <nav class="crumbs" aria-label="Breadcrumb">
-          <a href="/">Home</a>
-          {record.categories && <> / <a href={`/category/${record.categories.slug}`}>{record.categories.name}</a></>}
-        </nav>
-        <h1 class="rec-h1">{record.title}</h1>
-        {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
-        <Board record={record} showTitle={false} />
+  {record ? (
+    <article>
+      <header class="band rec-band">
+        <div class="wrap">
+          <nav class="crumbs muted" aria-label="Breadcrumb">
+            <a href="/">Home</a>
+            {record.categories && <> / <a href={`/category/${record.categories.slug}`}>{record.categories.name}</a></>}
+          </nav>
+          <h1 class="rec-h1">{record.title}</h1>
+          {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
+          <Board record={record} showTitle={false} />
+        </div>
+      </header>
 
+      <div class="wrap">
         <dl class="facts">
           {facts.map(([k, val]) => (<div><dt>{k}</dt><dd>{val}</dd></div>))}
         </dl>
+
+        <Perspective record={record} />
 
         <section class="sources" aria-labelledby="src">
           <h2 id="src">Sources</h2>
@@ -80,21 +87,25 @@ const facts = record
             <RecordList records={related} />
           </section>
         )}
-      </article>
-    ) : (
+      </div>
+    </article>
+  ) : (
+    <div class="wrap">
       <section class="missing">
         <h1>No record at this address.</h1>
         <p>The link may be old, or the record may have been renamed. <a href="/">Browse all records</a> instead.</p>
       </section>
-    )}
-  </div>
+    </div>
+  )}
 </Base>
 
 <style>
-  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: var(--ink-soft); }
-  .rec-h1 { margin-bottom: 1.5rem; }
+  .rec-band { padding-bottom: 2.5rem; }
+  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; }
+  .rec-h1 { margin-bottom: 1.5rem; color: #fff; font-size: clamp(2.2rem, 1.3rem + 4vw, 4rem); }
+  .rec-band :global(.board) { box-shadow: inset 0 0 0 1px #2f3e4d; display: inline-block; min-width: min(100%, 26rem); max-width: 100%; }
   .flag { background: var(--red); color: #fff; display: inline-block; padding: 0.3rem 0.7rem; border-radius: 4px; margin: 0 0 1rem; font-family: var(--display); font-weight: 600; }
-  .facts { margin: 2rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 1.25rem 2rem; }
+  .facts { margin: 2.5rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 1.25rem 1.5rem; }
   .facts div { border-top: 2px solid var(--ink); padding-top: 0.5rem; }
   .facts dt { font: 600 0.9rem/1.3 var(--display); color: var(--ink-soft); }
   .facts dd { margin: 0.2rem 0 0; font-size: 1.1rem; }

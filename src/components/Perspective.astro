@@ -1,0 +1,174 @@
+---
+// "Put it in perspective": compares a record with things people already know.
+// Picks a view from the record itself: a height chart, a length chart, or a lifetime timeline.
+import { formatValue, type RecordRow } from "../lib/data";
+interface Props { record: RecordRow }
+const { record } = Astro.props;
+
+type Ref = { name: string; m: number };
+const PERSON_HEIGHTS: Ref[] = [
+  { name: "Average adult man", m: 1.75 },
+  { name: "Standard US door", m: 2.03 },
+  { name: "Basketball hoop", m: 3.05 },
+];
+const STRUCTURE_HEIGHTS: Ref[] = [
+  { name: "Statue of Liberty, with pedestal", m: 93 },
+  { name: "Great Pyramid of Giza", m: 139 },
+  { name: "Eiffel Tower", m: 330 },
+  { name: "Empire State Building", m: 443 },
+];
+const LENGTHS: Ref[] = [
+  { name: "Golden Gate Bridge", m: 2737 },
+  { name: "Manhattan, end to end", m: 21600 },
+  { name: "English Channel, narrowest crossing", m: 33300 },
+  { name: "A marathon", m: 42195 },
+];
+const EVENTS: { year: number; text: string }[] = [
+  { year: 1876, text: "Bell patents the telephone" },
+  { year: 1903, text: "First powered airplane flight" },
+  { year: 1914, text: "World War I begins" },
+  { year: 1939, text: "World War II begins" },
+  { year: 1969, text: "First people walk on the Moon" },
+  { year: 1989, text: "The Berlin Wall falls" },
+];
+
+const title = record.title.toLowerCase();
+const n = record.value_numeric ?? 0;
+const kind =
+  record.unit === "years" ? "life"
+  : record.unit === "m" && /tall|height|high/.test(title) ? "height"
+  : record.unit === "m" && /long|length|distance/.test(title) ? "length"
+  : null;
+
+const fmtM = (m: number) =>
+  m >= 10000 ? `${(m / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })} km` : `${m.toLocaleString("en-US", { maximumFractionDigits: 2 })} m`;
+const times = (a: number, b: number) => (a / b).toLocaleString("en-US", { maximumFractionDigits: 1 });
+
+let bars: Ref[] = [];
+let line = "";
+if (kind === "height" || kind === "length") {
+  const pool = kind === "length" ? LENGTHS : n < 10 ? PERSON_HEIGHTS : STRUCTURE_HEIGHTS;
+  bars = pool.filter((r) => r.m <= n * 1.15).slice(-4);
+  // Compare against the biggest reference that the record actually beats.
+  const anchor = bars.filter((b) => b.m <= n).pop();
+  if (anchor && kind === "height" && n < 10) {
+    line = `${record.holder} stood ${Math.round((n - pool[0].m) * 100)} cm taller than the average adult man.`;
+  } else if (anchor && kind === "height") {
+    line = `At ${fmtM(n)}, it is ${times(n, anchor.m)} times the height of the ${anchor.name.replace(/,.*$/, "")}.`;
+  } else if (anchor) {
+    line = `At ${fmtM(n)}, it is as long as ${times(n, anchor.m)} ${anchor.name === "A marathon" ? "marathons" : `copies of the ${anchor.name.replace(/,.*$/, "")}`} laid end to end.`;
+  }
+}
+const max = Math.max(n, ...bars.map((b) => b.m));
+
+// Lifetime view: birth year comes from the record's end date minus the age.
+let life: { born: number; died: number; events: { year: number; age: number; text: string }[] } | null = null;
+if (kind === "life" && record.achieved_on) {
+  const died = Number(record.achieved_on.slice(0, 4));
+  const born = died - Math.floor(n);
+  life = { born, died, events: EVENTS.filter((e) => e.year > born && e.year < died).map((e) => ({ ...e, age: e.year - born })) };
+}
+const v = formatValue(record);
+---
+{kind && (bars.length > 0 || life) && (
+  <section class="persp" aria-labelledby="persp-h">
+    <h2 id="persp-h">Put it in perspective</h2>
+
+    {(kind === "height") && (
+      <>
+        <p class="line">{line}</p>
+        <div class="vchart" role="img" aria-label={line}>
+          {bars.map((b) => (
+            <div class="col" style={`--h:${(b.m / max) * 100}%`}>
+              <span class="val">{fmtM(b.m)}</span>
+              <span class="bar"></span>
+              <span class="name">{b.name}</span>
+            </div>
+          ))}
+          <div class="col me" style={`--h:${(n / max) * 100}%`}>
+            <span class="val">{fmtM(n)}</span>
+            <span class="bar"></span>
+            <span class="name">{record.holder}</span>
+          </div>
+        </div>
+      </>
+    )}
+
+    {kind === "length" && (
+      <>
+        <p class="line">{line}</p>
+        <div class="hchart" role="img" aria-label={line}>
+          <div class="hrow me">
+            <span class="name">{record.holder}</span>
+            <span class="track"><span class="bar" style="width:100%"></span></span>
+            <span class="val">{fmtM(n)}</span>
+          </div>
+          {bars.slice().reverse().map((b) => (
+            <div class="hrow">
+              <span class="name">{b.name}</span>
+              <span class="track"><span class="bar" style={`width:${Math.max((b.m / max) * 100, 0.6)}%`}></span></span>
+              <span class="val">{fmtM(b.m)}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+
+    {life && (
+      <>
+        <p class="line">{record.holder} lived through {life.died - life.born} years of history. Here is what changed along the way.</p>
+        <ol class="life">
+          <li class="end"><span class="age">Born</span><span class="yr">{life.born}</span></li>
+          {life.events.map((e) => (
+            <li><span class="age">Age {e.age}</span><span class="yr">{e.year}</span><span class="ev">{e.text}</span></li>
+          ))}
+          <li class="end me"><span class="age">Age {v.value}</span><span class="yr">{life.died}</span><span class="ev">Sets the record: {record.value_text ?? `${v.value} years`}</span></li>
+        </ol>
+      </>
+    )}
+  </section>
+)}
+
+<style>
+  .persp { margin-top: 3.5rem; }
+  .persp h2 { margin-bottom: 0.5rem; }
+  .line { font-size: 1.2rem; max-width: 52ch; margin: 0 0 1.5rem; }
+
+  .vchart {
+    display: flex; align-items: flex-end; gap: clamp(0.5rem, 2vw, 1.5rem);
+    height: 320px; border-bottom: 2px solid var(--ink); padding-top: 1.75rem; box-sizing: content-box;
+  }
+  .col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; position: relative; min-width: 0; }
+  /* Each bar is exactly --h of the chart height; the label sits just above it. */
+  .col .bar { display: block; height: var(--h); background: #8a99a8; border-radius: 3px 3px 0 0; min-height: 3px; }
+  .col .val { position: absolute; left: 0; right: 0; bottom: calc(var(--h) + 0.3rem); font: 700 0.95rem/1.2 var(--display); text-align: center; font-variant-numeric: tabular-nums; }
+  .col .name { position: absolute; top: 100%; left: 0; right: 0; margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.25; text-align: center; color: var(--ink-soft); }
+  .col.me .bar { background: var(--amber); }
+  .col.me .name { color: var(--ink); font-weight: 600; }
+  .vchart { margin-bottom: 4rem; }
+
+  .hchart { display: grid; gap: 0.6rem; }
+  .hrow { display: grid; grid-template-columns: minmax(7rem, 14rem) 1fr auto; gap: 0.75rem; align-items: center; }
+  .hrow .name { font-size: 0.95rem; color: var(--ink-soft); }
+  .hrow .track { height: 1.1rem; }
+  .hrow .bar { display: block; height: 100%; background: #8a99a8; border-radius: 0 3px 3px 0; }
+  .hrow .val { font: 700 0.95rem/1 var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hrow.me .bar { background: var(--amber); }
+  .hrow.me .name { color: var(--ink); font-weight: 600; }
+  @media (max-width: 40rem) {
+    .hrow { grid-template-columns: 1fr auto; grid-template-areas: "n v" "t t"; gap: 0.2rem 0.75rem; }
+    .hrow .name { grid-area: n; } .hrow .val { grid-area: v; } .hrow .track { grid-area: t; }
+  }
+
+  .life { list-style: none; margin: 0; padding: 0 0 0 1.25rem; border-left: 3px solid var(--rule); max-width: 40rem; }
+  .life li { position: relative; display: grid; grid-template-columns: 5.5rem 3.5rem 1fr; gap: 0.75rem; padding: 0.55rem 0; align-items: baseline; }
+  .life li::before {
+    content: ""; position: absolute; left: calc(-1.25rem - 8px); top: 1.05rem; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--paper); border: 3px solid #8a99a8;
+  }
+  .life .age { font: 700 1rem/1.2 var(--display); }
+  .life .yr { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .life li.me::before { background: var(--amber); border-color: var(--amber); }
+  .life li.me .ev { font-weight: 600; }
+  @media (max-width: 30rem) { .life li { grid-template-columns: 4.5rem 1fr; } .life .ev { grid-column: 1 / -1; } }
+</style>

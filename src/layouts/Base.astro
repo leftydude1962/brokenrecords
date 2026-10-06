@@ -36,7 +36,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <a class="skip" href="#main">Skip to content</a>
     <header class="site-head">
       <div class="wrap head-row">
-        <a class="wordmark" href="/">Broken Records</a>
+        <a class="wordmark" href="/" aria-label="Broken Records home"><span class="crack" data-text="Broken">Broken</span> Records</a>
         <nav aria-label="Main">
           <a href="/category">Categories</a>
         </nav>
@@ -55,16 +55,18 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
       </div>
     </footer>
     <script>
-      // Split-flap: each character cycles through a few glyphs, then settles on its real value.
-      // The final text is already in the HTML, so search engines and screen readers never see the animation.
+      // Split-flap: each tile cycles through a few glyphs, then settles on its real value.
+      // Rows settle top to bottom like a stadium board. The final text is already in the HTML,
+      // so search engines and screen readers never see the animation.
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (!reduce) {
-        const glyphs = "0123456789ABCDEFGHJKMNPRSTUVWXYZ";
+        const letters = "ABCDEFGHIJKLMNOPRSTUVWXYZ";
         document.querySelectorAll<HTMLElement>("[data-flap] .ch").forEach((el, i) => {
           const final = el.textContent ?? "";
-          if (final.trim() === "" || final === "." || final === ",") return;
+          if (!/[A-Za-z0-9]/.test(final)) return;
+          const row = Number(el.closest<HTMLElement>("[data-row]")?.dataset.row ?? 0);
           const isDigit = /\d/.test(final);
-          let n = 6 + (i % 7) * 2;
+          let n = 5 + row * 3 + (i % 6);
           el.classList.add("flipping");
           const t = setInterval(() => {
             if (n-- <= 0) {
@@ -75,8 +77,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
             }
             el.textContent = isDigit
               ? String(Math.floor(Math.random() * 10))
-              : glyphs[Math.floor(Math.random() * glyphs.length)];
-          }, 55);
+              : letters[Math.floor(Math.random() * letters.length)];
+          }, 50);
         });
       }
     </script>
@@ -90,6 +92,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     --ink-soft: #4a5866;
     --rule: #c7ced5;
     --board: #1e2935;
+    --night: #121a22;
     --flap: #2b3947;
     --amber: #f2b33d;
     --red: #c8102e;
@@ -104,6 +107,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
       --ink-soft: #a3b0bc;
       --rule: #2c3a47;
       --board: #0d141b;
+      --night: #0a1016;
       --flap: #1e2935;
       --link: #8cc2ee;
     }
@@ -126,16 +130,24 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
   .skip { position: absolute; left: -999px; }
   .skip:focus { left: 1rem; top: 1rem; background: var(--amber); color: #000; padding: 0.5rem 0.75rem; z-index: 10; }
 
-  .site-head { border-bottom: 1px solid var(--rule); }
+  .site-head { background: var(--night); color: #fff; }
   .head-row { display: flex; align-items: baseline; justify-content: space-between; padding-top: 1rem; padding-bottom: 1rem; }
   .wordmark {
-    font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.25rem;
-    color: var(--ink); text-decoration: none; letter-spacing: -0.01em;
+    font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.35rem;
+    color: #fff; text-decoration: none; letter-spacing: -0.01em;
   }
-  .site-head nav a { font-family: var(--display); font-weight: 600; color: var(--ink); text-decoration: none; }
+  /* "Broken" is drawn twice and clipped into two halves; the lower half slips and tilts. */
+  .crack { position: relative; display: inline-block; color: transparent; }
+  .crack::before, .crack::after { content: attr(data-text); position: absolute; inset: 0; color: var(--amber); }
+  .crack::before { clip-path: polygon(0 0, 100% 0, 100% 40%, 66% 62%, 36% 42%, 0 60%); }
+  .crack::after { clip-path: polygon(0 60%, 36% 42%, 66% 62%, 100% 40%, 100% 100%, 0 100%); transform: translate(3px, 3px) rotate(2deg); }
+  .site-head nav a { font-family: var(--display); font-weight: 600; color: #d5dde4; text-decoration: none; }
   .site-head nav a:hover { text-decoration: underline; }
 
   main { padding-bottom: 4rem; }
+  .band { background: var(--night); color: #fff; padding-bottom: 3rem; }
+  .band a { color: #f6c868; }
+  .band .muted { color: #a9b6c2; }
   .site-foot { border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 0.95rem; padding: 2rem 0 3rem; }
   .site-foot p { max-width: 62ch; margin: 0 0 0.5rem; }
   .site-foot .fine { font-size: 0.85rem; }

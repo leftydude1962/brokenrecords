@@ -1,0 +1,78 @@
+---
+// The home page board: every featured record as one row of split-flap tiles,
+// laid out like a stadium results board.
+import { formatValue, type RecordRow } from "../lib/data";
+interface Props { records: RecordRow[] }
+const { records } = Astro.props;
+const tiles = (s: string) => [...s.toUpperCase()];
+---
+<div class="dep" data-flap>
+  <div class="dep-head" aria-hidden="true">
+    <span>Record</span><span class="h-holder">Held by</span><span class="h-val">Mark</span>
+  </div>
+  <ol class="dep-rows">
+    {records.map((r, i) => {
+      const v = formatValue(r);
+      return (
+        <li data-row={i}>
+          <a href={`/records/${r.slug}`} class="dep-row" aria-label={`${r.title}: ${r.holder}, ${v.value} ${v.unit}`}>
+            <span class="tiles t-title" aria-hidden="true">
+              {tiles(r.title).map((c) => <span class:list={["ch", { gap: c === " " }]}>{c}</span>)}
+            </span>
+            <span class="holder" aria-hidden="true">{r.holder}</span>
+            <span class="tiles t-val" aria-hidden="true">
+              {[...v.value].map((c) => <span class:list={["ch", { gap: c === " ", punct: c === "." || c === "," }]}>{c}</span>)}
+              <span class="unit">{v.unit}</span>
+            </span>
+          </a>
+        </li>
+      );
+    })}
+  </ol>
+</div>
+
+<style>
+  .dep {
+    background: var(--board); border-radius: 8px; padding: 0.75rem;
+    box-shadow: inset 0 0 0 1px #2f3e4d, 0 30px 60px -30px rgba(0, 0, 0, 0.6);
+  }
+  @media (min-width: 48rem) { .dep { padding: 1rem 1.25rem 1.25rem; } }
+  .dep-head {
+    display: none; color: #8796a4; font: 600 0.85rem/1 var(--display);
+    padding: 0.4rem 0.25rem 0.75rem; border-bottom: 1px solid #2f3e4d;
+  }
+  @media (min-width: 48rem) {
+    .dep-head { display: grid; grid-template-columns: 1fr 14rem 11rem; gap: 1rem; }
+    .h-val { text-align: right; }
+  }
+  .dep-rows { list-style: none; margin: 0; padding: 0; }
+  .dep-rows li + li { border-top: 1px solid #2a3846; }
+  .dep-row {
+    display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t t" "h v";
+    gap: 0.5rem 1rem; align-items: center; padding: 0.8rem 0.25rem; text-decoration: none; border-radius: 4px;
+  }
+  @media (min-width: 48rem) {
+    .dep-row { grid-template-columns: 1fr 14rem 11rem; grid-template-areas: "t h v"; }
+  }
+  .dep-row:hover { background: #253241; }
+  .dep-row:hover .holder { color: #fff; }
+  .t-title { grid-area: t; }
+  .holder { grid-area: h; color: #c3ced8; font: 600 1rem/1.25 var(--display); font-stretch: 100%; }
+  .t-val { grid-area: v; justify-content: flex-end; }
+
+  .tiles { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+  .ch {
+    display: inline-block; position: relative; min-width: 0.95em; text-align: center;
+    background: var(--flap); color: var(--amber); border-radius: 2px;
+    font: 800 clamp(0.95rem, 0.8rem + 0.5vw, 1.2rem)/1.5 var(--display); font-stretch: 85%;
+    font-variant-numeric: tabular-nums; padding: 0;
+  }
+  .ch::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--board); }
+  .ch.gap { background: transparent; min-width: 0.45em; }
+  .ch.gap::after { display: none; }
+  .t-val .ch { font-size: clamp(1.25rem, 1rem + 0.8vw, 1.6rem); min-width: 0.8em; }
+  .t-val .ch.punct { background: transparent; min-width: 0.3em; }
+  .t-val .ch.punct::after { display: none; }
+  .unit { color: #8796a4; font: 700 0.95rem/1 var(--display); margin-left: 0.35rem; align-self: flex-end; padding-bottom: 0.3rem; }
+  .ch.flipping { color: #b8862a; }
+</style>
