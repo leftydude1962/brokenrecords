@@ -55,7 +55,7 @@ const facts = record
         </nav>
         <h1 class="rec-h1">{record.title}</h1>
         {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
-        <Board record={record} />
+        <Board record={record} showTitle={false} />
 
         <dl class="facts">
           {facts.map(([k, val]) => (<div><dt>{k}</dt><dd>{val}</dd></div>))}

@@ -64,7 +64,10 @@ export async function getRecord(slug: string): Promise<RecordRow | null> {
 
 // Turns the stored number and unit into what a reader expects to see.
 export function formatValue(r: Pick<RecordRow, "value_numeric" | "value_text" | "unit">): { value: string; unit: string } {
-  if (r.value_text && r.unit === "years") return { value: r.value_text.replace(/,? \d+ days?$/, ""), unit: "years" };
+  if (r.unit === "years") {
+    const whole = r.value_text?.match(/^\d+/)?.[0] ?? (r.value_numeric != null ? String(Math.floor(r.value_numeric)) : "");
+    return { value: whole, unit: "years" };
+  }
   const n = r.value_numeric;
   if (n == null) return { value: r.value_text ?? "", unit: r.unit ?? "" };
   if (r.unit === "m" && n >= 10000) return { value: trim(n / 1000), unit: "km" };

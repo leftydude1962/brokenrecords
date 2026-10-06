@@ -1,21 +1,26 @@
 ---
-import { formatValue, formatDate, type RecordRow } from "../lib/data";
+import { formatValue, type RecordRow } from "../lib/data";
 interface Props {
   record: RecordRow;
   heading?: "h1" | "h2" | "p";
   link?: boolean;
+  showTitle?: boolean;
 }
-const { record, heading = "p", link = false } = Astro.props;
+const { record, heading = "p", link = false, showTitle = true } = Astro.props;
 const { value, unit } = formatValue(record);
 const chars = [...value];
-const year = record.achieved_on ? formatDate(record.achieved_on) : null;
-const meta = [record.location, year ? `since ${year}` : null].filter(Boolean).join(", ");
+// Location and the year the record was set. The year alone avoids wording that fits
+// some records and not others (a building opening date versus a person's final age).
+const year = record.achieved_on ? record.achieved_on.slice(0, 4) : null;
+const meta = [record.location, year].filter(Boolean).join(", ");
 const Title = heading;
 ---
 <section class="board" aria-label={`${record.title}: ${value} ${unit}, ${record.holder ?? ""}`}>
-  <Title class="board-title">
-    {link ? <a href={`/records/${record.slug}`} style="color:inherit">{record.title}</a> : record.title}
-  </Title>
+  {showTitle && (
+    <Title class="board-title">
+      {link ? <a href={`/records/${record.slug}`} style="color:inherit">{record.title}</a> : record.title}
+    </Title>
+  )}
   <div class="flaps" aria-hidden="true">
     <span class="digits" data-flap>
       {chars.map((c) => <span class:list={["ch", { sep: c === "." || c === "," || c === " " }]}>{c}</span>)}
