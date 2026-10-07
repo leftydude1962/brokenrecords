@@ -3,13 +3,13 @@
 // the card is on screen, and lays the number, title and holder over it. Records without media yet get a
 // tinted backdrop so the grid still reads as one set.
 import { formatValue, type RecordRow } from "../lib/data";
-interface Props { records: RecordRow[]; numbered?: boolean; filterable?: boolean }
-const { records, numbered = true, filterable = false } = Astro.props;
+interface Props { records: RecordRow[]; numbered?: boolean; filterable?: boolean; strip?: boolean }
+const { records, numbered = true, filterable = false, strip = false } = Astro.props;
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const pad = (n: number) => String(n).padStart(2, "0");
 ---
-<ul class="cards" data-cards>
+<ul class:list={["cards", { strip }]} data-cards>
   {records.map((r, i) => {
     const v = formatValue(r);
     const value = v.value || "—";
@@ -74,6 +74,14 @@ const pad = (n: number) => String(n).padStart(2, "0");
     list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
   }
+  /* One scrolling row, used for the featured clips at the top of the home page. */
+  .cards.strip {
+    display: grid; grid-auto-flow: column; grid-template-columns: none;
+    grid-auto-columns: min(78vw, 15rem); overflow-x: auto; scroll-snap-type: x mandatory;
+    padding-bottom: 0.75rem; scrollbar-width: thin;
+  }
+  .strip .card { scroll-snap-align: start; }
+  .strip .card-link { aspect-ratio: 9 / 16; }
   .card { position: relative; border-radius: 6px; overflow: hidden; background: #0b1117; isolation: isolate; }
   .card[hidden] { display: none; }
   .card-link {

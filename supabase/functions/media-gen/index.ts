@@ -3,14 +3,14 @@
 // Each record moves through these states (records.media_status):
 //   null            -> waiting to start
 //   image_pending   -> Seedream is drawing the poster image
-//   video_pending   -> Seedance is animating that image into a 5 second clip
-//   done            -> poster_url and video_url are set
+//   video_pending   -> Seedance is animating that image into a 5 second clip (featured records only)
+//   done            -> poster_url is set, and video_url too for featured records
 //   failed          -> two attempts failed; media_error says why
 //
-// A cron job calls this every 10 minutes. Each call checks the tasks in progress, saves finished
-// files to Supabase Storage (bucket "media"), and starts new records up to a daily cap. The cap
-// bounds what anyone can spend by calling this function, because the function never regenerates
-// a record that already has media.
+// Nothing calls this on a schedule; it runs only when invoked. Each call checks the tasks in progress, saves finished
+// files to Supabase Storage (bucket "media"), and starts new records. Spending is bounded in code:
+// a record that already has media is never regenerated, and no more than MAX_VIDEOS clips are ever
+// made in total. Every other record gets a still image only (about 3 KIE credits each).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const KIE = "https://api.kie.ai/api/v1/jobs";
@@ -18,8 +18,10 @@ const env = (k: string, d: string) => Deno.env.get(k) ?? d;
 const IMAGE_MODEL = env("MEDIA_IMAGE_MODEL", "seedream/5-flash-text-to-image");
 const VIDEO_MODEL = env("MEDIA_VIDEO_MODEL", "bytedance/seedance-2-fast");
 const RESOLUTION = env("MEDIA_RESOLUTION", "720p");
-const DAILY_CAP = Number(env("MEDIA_DAILY_CAP", "30"));
-const MAX_INFLIGHT = Number(env("MEDIA_MAX_INFLIGHT", "6"));
+const DAILY_CAP = Number(env("MEDIA_DAILY_CAP", "400"));
+const MAX_INFLIGHT = Number(env("MEDIA_MAX_INFLIGHT", "20"));
+// Hard limit on clips, about 124 KIE credits each. Change it here, in code, on purpose.
+const MAX_VIDEOS = 10;
 const TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 const STILL_STYLE =
@@ -33,7 +35,9 @@ const MOTION_STYLE =
 type Rec = {
   id: string; slug: string; visual_prompt: string | null; media_status: string | null;
   media_task_id: string | null; media_attempts: number; media_started_at: string | null; poster_url: string | null;
+  featured: boolean;
 };
+const COLS = "id,slug,visual_prompt,media_status,media_task_id,media_attempts,media_started_at,poster_url,featured";
 
 Deno.serve(async (req) => {
   const key = Deno.env.get("KIE_API_KEY");
@@ -76,6 +80,14 @@ Deno.serve(async (req) => {
       generate_audio: false,
     });
 
+  // Clips made or in progress. Checked before every new clip so the total never passes MAX_VIDEOS.
+  const videoCount = async () => {
+    const { count } = await sb.from("records").select("id", { count: "exact", head: true })
+      .or("video_url.not.is.null,media_status.eq.video_pending");
+    return count ?? MAX_VIDEOS;
+  };
+  const wantsVideo = async (r: Rec) => r.featured && (await videoCount()) < MAX_VIDEOS;
+
   const fail = async (r: Rec, msg: string) => {
     const attempts = r.media_attempts + 1;
     await sb.from("records").update({
@@ -86,7 +98,7 @@ Deno.serve(async (req) => {
 
   // 1. Check tasks already running.
   const { data: inflight } = await sb.from("records")
-    .select("id,slug,visual_prompt,media_status,media_task_id,media_attempts,media_started_at,poster_url")
+    .select(COLS)
     .in("media_status", ["image_pending", "video_pending"]);
   let running = 0;
   for (const r of (inflight ?? []) as Rec[]) {
@@ -98,10 +110,15 @@ Deno.serve(async (req) => {
         if (!out) throw new Error("no result url");
         if (r.media_status === "image_pending") {
           const poster = await store(out, `posters/${r.slug}.jpg`, "image/jpeg");
-          const taskId = await startVideo(r, poster);
-          await sb.from("records").update({ poster_url: poster, media_status: "video_pending", media_task_id: taskId }).eq("id", r.id);
-          log.push({ slug: r.slug, poster: "saved", video: "started", credits: t.creditsConsumed });
-          running++;
+          if (await wantsVideo(r)) {
+            const taskId = await startVideo(r, poster);
+            await sb.from("records").update({ poster_url: poster, media_status: "video_pending", media_task_id: taskId }).eq("id", r.id);
+            log.push({ slug: r.slug, poster: "saved", video: "started", credits: t.creditsConsumed });
+            running++;
+          } else {
+            await sb.from("records").update({ poster_url: poster, media_status: "done", media_task_id: null, media_error: null }).eq("id", r.id);
+            log.push({ slug: r.slug, poster: "saved", credits: t.creditsConsumed });
+          }
         } else {
           const video = await store(out, `videos/${r.slug}.mp4`, "video/mp4");
           await sb.from("records").update({ video_url: video, media_status: "done", media_task_id: null, media_error: null }).eq("id", r.id);
@@ -125,15 +142,19 @@ Deno.serve(async (req) => {
   const { count: today } = await sb.from("records").select("id", { count: "exact", head: true }).gte("media_started_at", since);
   const slots = Math.min(startLimit, MAX_INFLIGHT - running, DAILY_CAP - (today ?? 0));
   if (slots > 0) {
-    let q = sb.from("records").select("id,slug,visual_prompt,media_status,media_task_id,media_attempts,media_started_at,poster_url")
+    let q = sb.from("records").select(COLS)
       .eq("status", "published").is("media_status", null).not("visual_prompt", "is", null)
-      .order("media_priority", { ascending: true, nullsFirst: false }).limit(slots);
+      .order("featured", { ascending: false }).order("media_priority", { ascending: true, nullsFirst: false }).limit(slots);
     if (only) q = q.in("slug", only);
     const { data: next } = await q;
     for (const r of (next ?? []) as Rec[]) {
       try {
         // A record whose poster already exists (a retry after a video failure) goes straight to video.
         if (r.poster_url) {
+          if (!(await wantsVideo(r))) {
+            await sb.from("records").update({ media_status: "done", media_error: null }).eq("id", r.id);
+            continue;
+          }
           const taskId = await startVideo(r, r.poster_url);
           await sb.from("records").update({ media_status: "video_pending", media_task_id: taskId, media_started_at: new Date().toISOString() }).eq("id", r.id);
           log.push({ slug: r.slug, video: "restarted" });

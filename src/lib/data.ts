@@ -23,12 +23,13 @@ export type RecordRow = {
   updated_at: string | null;
   poster_url: string | null;
   video_url: string | null;
+  featured: boolean;
   categories: { slug: string; name: string } | null;
   record_sources: Source[];
 };
 
 const RECORD_SELECT =
-  "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,status,last_verified_at,updated_at,poster_url,video_url,categories(slug,name),record_sources(url,publisher,license)";
+  "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,status,last_verified_at,updated_at,poster_url,video_url,featured,categories(slug,name),record_sources(url,publisher,license)";
 
 async function rest<T>(path: string): Promise<T> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {

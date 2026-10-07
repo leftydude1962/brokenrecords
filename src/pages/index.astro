@@ -22,9 +22,10 @@ const onBoard = [...groups.slice(start), ...groups.slice(0, start)]
   .map((list) => list[day % list.length]);
 // The card grid mixes categories (sport, nature, money, sport...) so the first screen is varied.
 // Within each category, records that already have a clip come first.
-const queues = groups.map((list) => [...list].sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url) || a.title.localeCompare(b.title)));
+const featured = records.filter((r) => r.featured).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url));
+const queues = [...byCat.values()].map((list) => list.filter((r) => !r.featured)).map((list) => [...list].sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url) || a.title.localeCompare(b.title)));
 const mixed: typeof records = [];
-for (let i = 0; mixed.length < records.length; i++) for (const q of queues) if (q[i]) mixed.push(q[i]);
+for (let i = 0; mixed.length < records.length - featured.length; i++) for (const q of queues) if (q[i]) mixed.push(q[i]);
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -45,6 +46,11 @@ const jsonLd = {
       <p class="lede muted">
         The fastest, tallest, longest and oldest, on one board. Every record links to its sources and shows the date we last checked it.
       </p>
+      {featured.length > 0 && (
+        <div class="featured" aria-label="Featured records">
+          <RecordCards records={featured} strip />
+        </div>
+      )}
       <Departures records={onBoard} />
       <p class="board-foot muted">Tap any row for the full record, the sources, and how it compares.</p>
     </div>
@@ -52,7 +58,7 @@ const jsonLd = {
 
   <section class="band explore" aria-labelledby="explore">
     <div class="wrap">
-      <h2 id="explore">All {records.length} records</h2>
+      <h2 id="explore">More records</h2>
       <div class="chips" role="toolbar" aria-label="Filter by category">
         <button type="button" class="chip on" data-filter="" aria-pressed="true">All records</button>
         {live.map((c) => <button type="button" class="chip" data-filter={c.slug} aria-pressed="false">{c.name}</button>)}
@@ -84,7 +90,7 @@ const jsonLd = {
 <script>
   // Category chips filter the card grid in place. Without JavaScript every card simply shows.
   const chips = document.querySelectorAll<HTMLButtonElement>(".chip");
-  const cards = document.querySelectorAll<HTMLElement>("[data-cards] .card");
+  const cards = document.querySelectorAll<HTMLElement>(".explore [data-cards] .card");
   chips.forEach((chip) => chip.addEventListener("click", () => {
     const f = chip.dataset.filter;
     chips.forEach((c) => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-pressed", String(on)); });
@@ -104,6 +110,7 @@ const jsonLd = {
   .hero h1 { color: #fff; max-width: 18ch; font-size: clamp(2.3rem, 1.4rem + 4vw, 4.4rem); }
   .nowrap { white-space: nowrap; }
   .lede { max-width: 52ch; font-size: 1.2rem; margin: 1rem 0 2.25rem; }
+  .featured { margin: 0 0 2.5rem; }
   .board-foot { font-size: 0.95rem; margin: 0.9rem 0 0; }
 
   .block { margin-top: 3.5rem; }
