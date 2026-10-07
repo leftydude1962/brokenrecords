@@ -1,6 +1,6 @@
 ---
 import Base from "../../layouts/Base.astro";
-import Board from "../../components/Board.astro";
+import Stat from "../../components/Stat.astro";
 import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
 import { getRecord, getRecords, getCategory, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
@@ -63,7 +63,7 @@ const facts = record
           </nav>
           <h1 class="rec-h1">{record.title}</h1>
           {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
-          <Board record={record} showTitle={false} />
+          <Stat record={record} />
           </div>
           {record.poster_url && (
             <figure class="rec-media" aria-hidden="true">
@@ -125,7 +125,6 @@ const facts = record
   @media (prefers-reduced-motion: reduce) { .rec-media video { display: none; } }
   .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; }
   .rec-h1 { margin-bottom: 1.5rem; color: #fff; font-size: clamp(2.2rem, 1.3rem + 4vw, 4rem); }
-  .rec-band :global(.board) { box-shadow: inset 0 0 0 1px #2f3e4d; display: inline-block; min-width: min(100%, 26rem); max-width: 100%; }
   .flag { background: var(--red); color: #fff; display: inline-block; padding: 0.3rem 0.7rem; border-radius: 4px; margin: 0 0 1rem; font-family: var(--display); font-weight: 600; }
   .facts { margin: 2.5rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 1.25rem 1.5rem; }
   .facts div { border-top: 2px solid var(--ink); padding-top: 0.5rem; }

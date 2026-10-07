@@ -57,34 +57,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
         <p class="fine">A brand of <a href="https://mohrcreativegroup.com" rel="noopener">Mohr Creative Group</a></p>
       </div>
     </footer>
-    <script>
-      // Split-flap: each tile cycles through a few glyphs, then settles on its real value.
-      // Rows settle top to bottom like a stadium board. The final text is already in the HTML,
-      // so search engines and screen readers never see the animation.
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (!reduce) {
-        const letters = "ABCDEFGHIJKLMNOPRSTUVWXYZ";
-        document.querySelectorAll<HTMLElement>("[data-flap] .ch").forEach((el, i) => {
-          const final = el.textContent ?? "";
-          if (!/[A-Za-z0-9]/.test(final)) return;
-          const row = Number(el.closest<HTMLElement>("[data-row]")?.dataset.row ?? 0);
-          const isDigit = /\d/.test(final);
-          let n = 5 + row * 3 + (i % 6);
-          el.classList.add("flipping");
-          const t = setInterval(() => {
-            if (n-- <= 0) {
-              clearInterval(t);
-              el.textContent = final;
-              el.classList.remove("flipping");
-              return;
-            }
-            el.textContent = isDigit
-              ? String(Math.floor(Math.random() * 10))
-              : letters[Math.floor(Math.random() * letters.length)];
-          }, 50);
-        });
-      }
-    </script>
   </body>
 </html>
 
@@ -155,29 +127,4 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
   .site-foot p { max-width: 62ch; margin: 0 0 0.5rem; }
   .site-foot .fine { font-size: 0.85rem; }
 
-  /* The timing board */
-  .board {
-    background: var(--board); color: #fff; border-radius: 6px;
-    padding: 1.25rem 1.25rem 1.1rem;
-  }
-  @media (min-width: 48rem) { .board { padding: 2rem 2.25rem 1.6rem; } }
-  .board-title { font-family: var(--display); font-weight: 600; font-stretch: 100%; color: #b9c4ce; font-size: 1rem; margin: 0 0 0.85rem; }
-  .flaps { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1rem; }
-  .digits { display: inline-flex; flex-wrap: wrap; gap: 6px 0.35em; }
-  .digits .word { display: inline-flex; flex-wrap: nowrap; gap: 4px; white-space: nowrap; }
-  .ch {
-    display: inline-block; min-width: 0.72em; text-align: center; position: relative;
-    background: var(--flap); color: var(--amber);
-    font: 800 clamp(2.6rem, 1.4rem + 6vw, 5.5rem)/1.15 var(--display); font-stretch: 75%;
-    font-variant-numeric: tabular-nums; padding: 0 0.08em; border-radius: 4px;
-  }
-  .ch::after {
-    content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--board); opacity: 0.85;
-  }
-  .ch.sep { background: none; min-width: 0.25em; padding: 0; }
-  .ch.sep::after { display: none; }
-  .ch.flipping { color: #c9922c; }
-  .flap-unit { font: 700 clamp(1.25rem, 1rem + 1.2vw, 2rem)/1 var(--display); color: #b9c4ce; padding-bottom: 0.5rem; }
-  .board-holder { font: 700 clamp(1.15rem, 1rem + 0.8vw, 1.6rem)/1.25 var(--display); font-stretch: 100%; margin: 1rem 0 0; color: #fff; }
-  .board-meta { margin: 0.25rem 0 0; color: #b9c4ce; font: 400 0.95rem/1.4 var(--serif); }
 </style>

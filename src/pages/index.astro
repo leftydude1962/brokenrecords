@@ -1,31 +1,26 @@
 ---
 import Base from "../layouts/Base.astro";
-import Departures from "../components/Departures.astro";
 import RecordCards from "../components/RecordCards.astro";
 import { getCategories, getRecords, cacheFor } from "../lib/data";
 
-const BOARD_ROWS = 8;
+const FEATURED = 10;
 const [categories, records] = await Promise.all([getCategories(), getRecords()]);
 const live = categories.filter((c) => (c.count ?? 0) > 0);
-// The board shows one record from each category, so the first screen covers sport, nature, speed and space.
-// The pick rotates daily, so returning visitors see a different board.
-const day = Math.floor(Date.now() / 86_400_000);
-const byCat = new Map<string, typeof records>();
-for (const r of records) {
-  const k = r.categories?.slug ?? "other";
-  byCat.set(k, [...(byCat.get(k) ?? []), r]);
-}
-const groups = [...byCat.values()];
-const start = groups.length ? day % groups.length : 0;
-const onBoard = [...groups.slice(start), ...groups.slice(0, start)]
-  .slice(0, BOARD_ROWS)
-  .map((list) => list[day % list.length]);
-// The card grid mixes categories (sport, nature, money, sport...) so the first screen is varied.
-// Within each category, records that already have a clip come first.
-const featured = records.filter((r) => r.featured).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url));
-const queues = [...byCat.values()].map((list) => list.filter((r) => !r.featured)).map((list) => [...list].sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url) || a.title.localeCompare(b.title)));
-const mixed: typeof records = [];
-for (let i = 0; mixed.length < records.length - featured.length; i++) for (const q of queues) if (q[i]) mixed.push(q[i]);
+const counts = Object.fromEntries(live.map((c) => [c.slug, c.count ?? 0]));
+
+// The front page shows 10 records, each from a different category. Records marked "featured"
+// (the ones with video) come first; if fewer than 10 categories have one, the gap is filled with
+// one record from another category, preferring records that already have a poster image.
+const seen = new Set<string>();
+const featured: typeof records = [];
+const take = (r: (typeof records)[number]) => {
+  const cat = r.categories?.slug;
+  if (!cat || seen.has(cat) || featured.length >= FEATURED) return;
+  seen.add(cat);
+  featured.push(r);
+};
+records.filter((r) => r.featured).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url)).forEach(take);
+records.filter((r) => !r.featured).sort((a, b) => Number(!!b.poster_url) - Number(!!a.poster_url)).forEach(take);
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -39,37 +34,21 @@ const jsonLd = {
   title="Broken Records: world records, kept current"
   description="Look up world records in sport, buildings, nature and people. Every record links to its sources and shows when it was last checked."
   jsonLd={jsonLd}
+  image={featured.find((r) => r.poster_url)?.poster_url}
 >
   <section class="band hero">
     <div class="wrap">
       <h1>World records, <span class="nowrap">kept current.</span></h1>
       <p class="lede muted">
-        The fastest, tallest, longest and oldest, on one board. Every record links to its sources and shows the date we last checked it.
+        The fastest, tallest, longest and oldest. Pick one to see every record in its category, with sources and the date we last checked it.
       </p>
-      {featured.length > 0 && (
-        <div class="featured" aria-label="Featured records">
-          <RecordCards records={featured} strip />
-        </div>
-      )}
-      <Departures records={onBoard} />
-      <p class="board-foot muted">Tap any row for the full record, the sources, and how it compares.</p>
-    </div>
-  </section>
-
-  <section class="band explore" aria-labelledby="explore">
-    <div class="wrap">
-      <h2 id="explore">More records</h2>
-      <div class="chips" role="toolbar" aria-label="Filter by category">
-        <button type="button" class="chip on" data-filter="" aria-pressed="true">All records</button>
-        {live.map((c) => <button type="button" class="chip" data-filter={c.slug} aria-pressed="false">{c.name}</button>)}
-      </div>
-      <RecordCards records={mixed} filterable />
+      <RecordCards records={featured} layout="five" categoryCounts={counts} />
     </div>
   </section>
 
   <div class="wrap">
     <section class="block" aria-labelledby="cats">
-      <h2 id="cats">Browse by category</h2>
+      <h2 id="cats">All {live.length} categories</h2>
       <ul class="cats">
         {live.map((c) => (
           <li>
@@ -81,28 +60,9 @@ const jsonLd = {
           </li>
         ))}
       </ul>
-      <p class="more"><a href="/category">See every category, including the ones on the way</a></p>
     </section>
-
   </div>
 </Base>
-
-<script>
-  // Category chips filter the card grid in place. Without JavaScript every card simply shows.
-  const chips = document.querySelectorAll<HTMLButtonElement>(".chip");
-  const cards = document.querySelectorAll<HTMLElement>(".explore [data-cards] .card");
-  chips.forEach((chip) => chip.addEventListener("click", () => {
-    const f = chip.dataset.filter;
-    chips.forEach((c) => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-pressed", String(on)); });
-    let n = 0;
-    cards.forEach((card) => {
-      const show = !f || card.dataset.cat === f;
-      card.hidden = !show;
-      const k = card.querySelector(".kicker");
-      if (show && k) k.textContent = k.textContent!.replace(/^\d+ \/ /, `${String(++n).padStart(2, "0")} / `);
-    });
-  }));
-</script>
 
 <style>
   .hero { padding-top: 2.5rem; padding-bottom: 3rem; }
@@ -110,8 +70,6 @@ const jsonLd = {
   .hero h1 { color: #fff; max-width: 18ch; font-size: clamp(2.3rem, 1.4rem + 4vw, 4.4rem); }
   .nowrap { white-space: nowrap; }
   .lede { max-width: 52ch; font-size: 1.2rem; margin: 1rem 0 2.25rem; }
-  .featured { margin: 0 0 2.5rem; }
-  .board-foot { font-size: 0.95rem; margin: 0.9rem 0 0; }
 
   .block { margin-top: 3.5rem; }
   .block h2 { margin-bottom: 1.25rem; }
@@ -125,17 +83,4 @@ const jsonLd = {
   .num { grid-row: 1 / 3; font: 900 3.2rem/0.85 var(--display); font-stretch: 70%; color: var(--ink); font-variant-numeric: tabular-nums; }
   .cname { font: 800 1.35rem/1.1 var(--display); font-stretch: 105%; }
   .cunit { color: var(--ink-soft); font-size: 0.9rem; }
-  .more { margin-top: 1rem; }
-  .chips {
-    display: flex; gap: 0.5rem; overflow-x: auto; padding: 0 0 1rem; margin-bottom: 0.5rem;
-    scrollbar-width: thin; -webkit-overflow-scrolling: touch;
-  }
-  .explore { padding-top: 0.5rem; border-top: 1px solid #22303d; }
-  .explore h2 { color: #fff; margin: 2.5rem 0 1.25rem; }
-  .chip {
-    flex: none; font: 700 0.8rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase;
-    padding: 0.7rem 1rem; border-radius: 3px; border: 1px solid #34434f; background: transparent; color: #e6ebef; cursor: pointer;
-  }
-  .chip:hover { border-color: #e6ebef; }
-  .chip.on { background: var(--amber); border-color: var(--amber); color: #111; }
 </style>

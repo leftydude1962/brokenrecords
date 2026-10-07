@@ -13,14 +13,15 @@ const description = category
   ? `Current world records in ${category.name.toLowerCase()}, with holders, values, and sources.`
   : "This category does not exist.";
 ---
-<Base title={title} description={description} noindex={!category || records.length === 0}>
+<Base title={title} description={description} noindex={!category || records.length === 0} image={records.find((r) => r.featured && r.poster_url)?.poster_url ?? records.find((r) => r.poster_url)?.poster_url}>
+  <section class="band">
   <div class="wrap">
     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/category">Categories</a></nav>
     {category ? (
       <>
         <h1>{category.name} records</h1>
         {records.length > 0 ? (
-          <div class="list"><RecordCards records={[...records].sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url))} /></div>
+          <div class="list"><RecordCards records={[...records].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(!!b.poster_url) - Number(!!a.poster_url))} /></div>
         ) : (
           <p class="empty">No {category.name.toLowerCase()} records are published yet. <a href="/">See all records</a>.</p>
         )}
@@ -32,10 +33,12 @@ const description = category
       </>
     )}
   </div>
+  </section>
 </Base>
 
 <style>
-  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: var(--ink-soft); }
+  .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: #a9b6c2; }
+  h1 { color: #fff; }
   .list { margin-top: 2rem; }
-  .empty { margin-top: 1.5rem; max-width: 55ch; color: var(--ink-soft); }
+  .empty { margin-top: 1.5rem; max-width: 55ch; color: #a9b6c2; }
 </style>

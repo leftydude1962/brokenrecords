@@ -1,0 +1,32 @@
+---
+// The record's headline number on its own page, in the same type as the cards.
+import { formatValue, type RecordRow } from "../lib/data";
+interface Props { record: RecordRow }
+const { record } = Astro.props;
+const { value, unit } = formatValue(record);
+const year = record.achieved_on ? record.achieved_on.slice(0, 4) : null;
+const meta = [record.location, year].filter(Boolean).join(", ");
+const size = value.length > 9 ? "s" : value.length > 6 ? "m" : "l";
+---
+<section class="stat" aria-label={`${record.title}: ${value} ${unit}, ${record.holder ?? ""}`}>
+  <p class:list={["stat-num", size]}>{value}</p>
+  {unit && <p class="stat-unit">{unit}</p>}
+  {record.holder && <p class="stat-holder">{record.holder}</p>}
+  {meta && <p class="stat-meta">{meta}</p>}
+</section>
+
+<style>
+  .stat p { margin: 0; }
+  .stat-num {
+    font: 900 clamp(5rem, 3rem + 9vw, 9.5rem)/0.85 var(--display); font-stretch: 62%;
+    color: var(--amber); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap;
+  }
+  .stat-num.m { font-size: clamp(4rem, 2.5rem + 7vw, 7.5rem); }
+  .stat-num.s { font-size: clamp(3rem, 2rem + 5vw, 5.5rem); }
+  .stat-unit {
+    margin-top: 0.7rem !important; font: 700 clamp(1rem, 0.9rem + 0.5vw, 1.3rem)/1.1 var(--display);
+    letter-spacing: 0.32em; text-transform: uppercase; color: #f4f6f8;
+  }
+  .stat-holder { margin-top: 1.4rem !important; font: 700 clamp(1.15rem, 1rem + 0.8vw, 1.6rem)/1.25 var(--display); color: #fff; }
+  .stat-meta { margin-top: 0.25rem !important; color: #b9c4ce; font: 400 0.95rem/1.4 var(--serif); }
+</style>

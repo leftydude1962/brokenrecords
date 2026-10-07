@@ -3,22 +3,35 @@
 // the card is on screen, and lays the number, title and holder over it. Records without media yet get a
 // tinted backdrop so the grid still reads as one set.
 import { formatValue, type RecordRow } from "../lib/data";
-interface Props { records: RecordRow[]; numbered?: boolean; filterable?: boolean; strip?: boolean }
-const { records, numbered = true, filterable = false, strip = false } = Astro.props;
+interface Props {
+  records: RecordRow[];
+  numbered?: boolean;
+  filterable?: boolean;
+  /** "five" lays 10 cards out as two rows of five on wide screens. */
+  layout?: "grid" | "five";
+  /** When set, each card links to its category page and shows that category's record count. */
+  categoryCounts?: Record<string, number>;
+}
+const { records, numbered = true, filterable = false, layout = "grid", categoryCounts } = Astro.props;
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const pad = (n: number) => String(n).padStart(2, "0");
 ---
-<ul class:list={["cards", { strip }]} data-cards>
+<ul class:list={["cards", layout]} data-cards>
   {records.map((r, i) => {
     const v = formatValue(r);
     const value = v.value || "—";
     const size = value.length > 9 ? "xs" : value.length > 6 ? "s" : value.length > 4 ? "m" : "l";
     const cat = r.categories?.name ?? "Record";
     const sub = [r.holder, r.location].filter(Boolean).join(" · ");
+    const catSlug = r.categories?.slug;
+    const toCat = categoryCounts && catSlug;
+    const href = toCat ? `/category/${catSlug}` : `/records/${r.slug}`;
+    const n = toCat ? categoryCounts[catSlug] : 0;
+    const go = toCat && n > 1 ? `See all ${n} ↗` : "See record ↗";
     return (
       <li class="card" data-cat={r.categories?.slug} style={`--h:${hue(r.categories?.slug ?? r.slug)}`}>
-        <a href={`/records/${r.slug}`} class="card-link">
+        <a href={href} class="card-link">
           {r.poster_url ? (
             <img class="media" src={r.poster_url} alt="" loading={i < 4 ? "eager" : "lazy"} decoding="async" width="576" height="1024" />
           ) : (
@@ -39,7 +52,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
           <span class="bottom">
             <span class="title">{r.title}</span>
             {sub && <span class="sub">{sub}</span>}
-            <span class="brand"><span class="rule"></span><span class="go">See record ↗</span></span>
+            <span class="brand"><span class="rule"></span><span class="go">{go}</span></span>
           </span>
         </a>
       </li>
@@ -74,14 +87,19 @@ const pad = (n: number) => String(n).padStart(2, "0");
     list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
   }
-  /* One scrolling row, used for the featured clips at the top of the home page. */
-  .cards.strip {
-    display: grid; grid-auto-flow: column; grid-template-columns: none;
-    grid-auto-columns: min(78vw, 15rem); overflow-x: auto; scroll-snap-type: x mandatory;
-    padding-bottom: 0.75rem; scrollbar-width: thin;
+  /* Ten featured cards: one column on phones, two on tablets, two rows of five on desktops. */
+  @media (min-width: 40rem) { .cards.five { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 64rem) { .cards.five { grid-template-columns: repeat(5, 1fr); } }
+  .five .num { font-size: 4rem; }
+  .five .num.m { font-size: 3.4rem; }
+  .five .num.s { font-size: 2.7rem; }
+  .five .num.xs { font-size: 2.1rem; }
+  .five .title { font-size: 1.45rem; }
+  @media (min-width: 64rem) {
+    .five .card-link { padding: 0.9rem 0.85rem; }
+    .five .unit { font-size: 0.8rem; letter-spacing: 0.2em; }
+    .five .sub { font-size: 0.8rem; }
   }
-  .strip .card { scroll-snap-align: start; }
-  .strip .card-link { aspect-ratio: 9 / 16; }
   .card { position: relative; border-radius: 6px; overflow: hidden; background: #0b1117; isolation: isolate; }
   .card[hidden] { display: none; }
   .card-link {
