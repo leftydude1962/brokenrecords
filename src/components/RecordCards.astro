@@ -84,8 +84,8 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 <style>
   .cards {
-    list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    list-style: none; margin: 0; padding: 0; display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
   }
   /* Ten featured cards: one column on phones, two on tablets, two rows of five on desktops. */
   @media (min-width: 40rem) { .cards.five { grid-template-columns: repeat(2, 1fr); } }

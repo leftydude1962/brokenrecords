@@ -95,8 +95,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     color: var(--ink);
     font: 400 1.0625rem/1.65 var(--serif);
   }
-  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1rem; }
+  .wrap { max-width: 120rem; margin: 0 auto; padding: 0 1rem; }
   @media (min-width: 48rem) { .wrap { padding: 0 2rem; } }
+  @media (min-width: 80rem) { .wrap { padding: 0 3rem; } }
   a { color: var(--link); text-underline-offset: 0.18em; }
   a:focus-visible, button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; border-radius: 2px; }
   h1, h2, h3 { font-family: var(--display); line-height: 1.1; margin: 0; }
