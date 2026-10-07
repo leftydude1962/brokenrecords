@@ -160,6 +160,7 @@ export function formatMetric(r: Pick<RecordRow, "value_numeric" | "value_text" |
       // Batting average, written the baseball way: .372
       return { value: n.toFixed(3).replace(/^0/, ""), unit: "" };
     case "USD":
+      if (n >= 1e12) return { value: "$" + trim(n / 1e12, 2), unit: "trillion" };
       if (n >= 1e9) return { value: "$" + trim(n / 1e9, 2), unit: "billion" };
       if (n >= 1e6) return { value: "$" + trim(n / 1e6, 0), unit: "million" };
       return { value: "$" + trim(n, 0), unit: "" };

@@ -14,7 +14,7 @@ const KEY = Deno.env.get("PERPLEXITY_API_KEY") ?? Deno.env.get("PERPLEXITY_AI_KE
 const AUTO_PUBLISH = (Deno.env.get("NEWS_AUTO_PUBLISH") ?? "true") !== "false";
 const ENDPOINT = "https://api.perplexity.ai/v1/sonar";
 
-// Categories are grouped so one search covers related areas. 8 searches a day, one per
+// Categories are grouped so one search covers related areas. 10 searches a day, one per
 // scheduled call, spaced a few minutes apart.
 const GROUPS: Record<string, string[]> = {
   athletics: ["sprinting", "marathon", "athletics"],
@@ -25,6 +25,8 @@ const GROUPS: Record<string, string[]> = {
   music_movies: ["music", "movies"],
   earth: ["weather", "nature", "structures", "buildings", "bridges"],
   people_speed_space: ["people", "animals", "speed", "space"],
+  college_motorsports: ["college-sports", "motorsports"],
+  money_internet_games: ["money", "internet", "games"],
 };
 
 type Rec = { id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null; unit: string | null; better_direction: "higher" | "lower" | null; achieved_on: string | null; category_id: string; location: string | null; governing_body: string | null };
