@@ -161,7 +161,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
   @media (min-width: 48rem) { .board { padding: 2rem 2.25rem 1.6rem; } }
   .board-title { font-family: var(--display); font-weight: 600; font-stretch: 100%; color: #b9c4ce; font-size: 1rem; margin: 0 0 0.85rem; }
   .flaps { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1rem; }
-  .digits { display: inline-flex; gap: 4px; }
+  .digits { display: inline-flex; flex-wrap: wrap; gap: 6px 0.35em; }
+  .digits .word { display: inline-flex; flex-wrap: nowrap; gap: 4px; white-space: nowrap; }
   .ch {
     display: inline-block; min-width: 0.72em; text-align: center; position: relative;
     background: var(--flap); color: var(--amber);

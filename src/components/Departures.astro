@@ -4,7 +4,8 @@
 import { formatValue, type RecordRow } from "../lib/data";
 interface Props { records: RecordRow[] }
 const { records } = Astro.props;
-const tiles = (s: string) => [...s.toUpperCase()];
+// Split into words so each word's tiles stay together; lines only break between words.
+const words = (s: string) => s.toUpperCase().split(/\s+/).filter(Boolean).map((w) => [...w]);
 ---
 <div class="dep" data-flap>
   <div class="dep-head" aria-hidden="true">
@@ -17,11 +18,13 @@ const tiles = (s: string) => [...s.toUpperCase()];
         <li data-row={i}>
           <a href={`/records/${r.slug}`} class="dep-row" aria-label={`${r.title}: ${r.holder}, ${v.value} ${v.unit}`}>
             <span class="tiles t-title" aria-hidden="true">
-              {tiles(r.title).map((c) => <span class:list={["ch", { gap: c === " " }]}>{c}</span>)}
+              {words(r.title).map((w) => <span class="word">{w.map((c) => <span class="ch">{c}</span>)}</span>)}
             </span>
             <span class="holder" aria-hidden="true">{r.holder}</span>
             <span class="tiles t-val" aria-hidden="true">
-              {[...v.value].map((c) => <span class:list={["ch", { gap: c === " ", punct: ".,:′″".includes(c) }]}>{c}</span>)}
+              {v.value.split(" ").map((w) => (
+                <span class="word">{[...w].map((c) => <span class:list={["ch", { punct: ".,:′″".includes(c) }]}>{c}</span>)}</span>
+              ))}
               <span class="unit">{v.unit}</span>
             </span>
           </a>
@@ -60,7 +63,9 @@ const tiles = (s: string) => [...s.toUpperCase()];
   .holder { grid-area: h; color: #c3ced8; font: 600 1rem/1.25 var(--display); font-stretch: 100%; }
   .t-val { grid-area: v; justify-content: flex-end; }
 
-  .tiles { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 4px 0.45em; align-items: center; }
+  /* A word never splits across lines: its tiles sit in one unbreakable group. */
+  .word { display: inline-flex; flex-wrap: nowrap; gap: 2px; white-space: nowrap; }
   .ch {
     display: inline-block; position: relative; min-width: 0.95em; text-align: center;
     background: var(--flap); color: var(--amber); border-radius: 2px;

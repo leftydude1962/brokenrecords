@@ -8,7 +8,6 @@ interface Props {
 }
 const { record, heading = "p", link = false, showTitle = true } = Astro.props;
 const { value, unit } = formatValue(record);
-const chars = [...value];
 // Location and the year the record was set. The year alone avoids wording that fits
 // some records and not others (a building opening date versus a person's final age).
 const year = record.achieved_on ? record.achieved_on.slice(0, 4) : null;
@@ -23,7 +22,9 @@ const Title = heading;
   )}
   <div class="flaps" aria-hidden="true">
     <span class="digits" data-flap>
-      {chars.map((c) => <span class:list={["ch", { sep: ".,: ′″".includes(c) }]}>{c}</span>)}
+      {value.split(" ").map((w) => (
+        <span class="word">{[...w].map((c) => <span class:list={["ch", { sep: ".,:′″".includes(c) }]}>{c}</span>)}</span>
+      ))}
     </span>
     <span class="flap-unit">{unit}</span>
   </div>
