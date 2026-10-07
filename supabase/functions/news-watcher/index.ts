@@ -18,16 +18,16 @@ const ENDPOINT = "https://api.perplexity.ai/v1/sonar";
 // Categories are grouped so one search covers related areas. 10 searches a day, one per
 // scheduled call, spaced a few minutes apart.
 const GROUPS: Record<string, string[]> = {
-  athletics: ["sprinting", "marathon", "athletics"],
-  water_ice: ["swimming", "speed-skating", "olympics"],
-  baseball_football: ["baseball", "football"],
-  basketball_hockey: ["basketball", "hockey"],
-  soccer_tennis_golf: ["soccer", "tennis", "golf"],
-  music_movies: ["music", "movies"],
-  earth: ["weather", "nature", "architecture", "plants"],
-  people_speed_space: ["people", "animals", "speed", "space"],
-  college_motorsports: ["college-sports", "motorsports"],
-  money_internet_games: ["money", "internet", "games", "food"],
+  athletics: ["sprinting", "marathon", "athletics", "paralympics", "cycling", "weightlifting"],
+  water_ice: ["swimming", "speed-skating", "olympics", "winter-sports"],
+  baseball_football: ["baseball", "football", "college-sports"],
+  basketball_hockey: ["basketball", "hockey", "combat-sports", "horse-racing"],
+  soccer_tennis_golf: ["soccer", "tennis", "golf", "cricket", "rugby"],
+  music_movies: ["music", "songwriting", "movies", "television", "books", "theater"],
+  earth: ["weather", "nature", "geography", "oceans-and-rivers", "volcanoes-and-earthquakes", "plants"],
+  people_speed_space: ["people", "endurance", "exploration", "mass-participation", "animals", "pets", "sea-life", "birds", "insects-and-reptiles"],
+  college_motorsports: ["motorsports", "speed", "transport", "thrill-rides", "architecture", "infrastructure", "space", "spacecraft", "astronomy"],
+  money_internet_games: ["money", "companies", "auctions", "sports-business", "crypto", "internet", "computing", "physics", "robotics-engineering", "games", "esports", "food", "competitive-eating", "drinks"],
 };
 
 type Rec = { id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null; unit: string | null; better_direction: "higher" | "lower" | null; achieved_on: string | null; category_id: string; location: string | null; governing_body: string | null };
