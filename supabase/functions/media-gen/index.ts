@@ -21,7 +21,7 @@ const RESOLUTION = env("MEDIA_RESOLUTION", "720p");
 const DAILY_CAP = Number(env("MEDIA_DAILY_CAP", "400"));
 const MAX_INFLIGHT = Number(env("MEDIA_MAX_INFLIGHT", "20"));
 // Hard limit on clips, about 124 KIE credits each. Change it here, in code, on purpose.
-const MAX_VIDEOS = 10;
+const MAX_VIDEOS = 15;
 const TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 const STILL_STYLE =

@@ -1,26 +1,16 @@
 ---
 import Base from "../layouts/Base.astro";
 import RecordCards from "../components/RecordCards.astro";
-import { getCategories, getRecords, cacheFor } from "../lib/data";
+import { getTaxonomy, getRecords, cacheFor, type RecordRow } from "../lib/data";
 
-const FEATURED = 10;
-const [categories, records] = await Promise.all([getCategories(), getRecords()]);
-const live = categories.filter((c) => (c.count ?? 0) > 0);
-const counts = Object.fromEntries(live.map((c) => [c.slug, c.count ?? 0]));
+const [{ sections, sectionOf }, records] = await Promise.all([getTaxonomy(), getRecords()]);
 
-// The front page shows 10 records, each from a different category. Records marked "featured"
-// (the ones with video) come first; if fewer than 10 categories have one, the gap is filled with
-// one record from another category, preferring records that already have a poster image.
-const seen = new Set<string>();
-const featured: typeof records = [];
-const take = (r: (typeof records)[number]) => {
-  const cat = r.categories?.slug;
-  if (!cat || seen.has(cat) || featured.length >= FEATURED) return;
-  seen.add(cat);
-  featured.push(r);
-};
-records.filter((r) => r.featured).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url)).forEach(take);
-records.filter((r) => !r.featured).sort((a, b) => Number(!!b.poster_url) - Number(!!a.poster_url)).forEach(take);
+// One card per section. The section's featured record (the one with a clip) leads; if a section
+// has none, its first record with an image stands in, then any record.
+const rank = (r: RecordRow) => (r.featured ? 0 : r.video_url ? 1 : r.poster_url ? 2 : 3);
+const featured = sections
+  .map((s) => records.filter((r) => r.categories && sectionOf[r.categories.slug]?.slug === s.slug).sort((a, b) => rank(a) - rank(b))[0])
+  .filter((r): r is RecordRow => !!r);
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -32,7 +22,7 @@ const jsonLd = {
 ---
 <Base
   title="Broken Records: world records, kept current"
-  description="Look up world records in sport, architecture, nature and people. Every record links to its sources and shows when it was last checked."
+  description="World records in sports, nature, architecture, animals, people, science, space, entertainment, food and money. Every record links to its sources."
   jsonLd={jsonLd}
   image={featured.find((r) => r.poster_url)?.poster_url}
 >
@@ -40,26 +30,32 @@ const jsonLd = {
     <div class="wrap">
       <h1>World records, <span class="nowrap">kept current.</span></h1>
       <p class="lede muted">
-        The fastest, tallest, longest and oldest. Pick one to see every record in its category, with sources and the date we last checked it.
+        The fastest, tallest, longest and oldest, in {sections.length} categories. Pick one to see every record inside it, with sources and the date we last checked it.
       </p>
-      <RecordCards records={featured} layout="five" categoryCounts={counts} />
+      <RecordCards records={featured} layout="five" sectionOf={sectionOf} />
     </div>
   </section>
 
   <div class="wrap">
     <section class="block" aria-labelledby="cats">
-      <h2 id="cats">All {live.length} categories</h2>
-      <ul class="cats">
-        {live.map((c) => (
-          <li>
-            <a href={`/category/${c.slug}`}>
-              <span class="num">{c.count}</span>
-              <span class="cname">{c.name}</span>
-              <span class="cunit">{c.count === 1 ? "record" : "records"}</span>
+      <h2 id="cats">Browse all {records.length} records</h2>
+      <div class="sections">
+        {sections.map((s) => (
+          <div class="sec">
+            <a class="sec-h" href={`/category/${s.slug}`}>
+              <span class="num">{s.count}</span>
+              <span class="sname">{s.name}</span>
             </a>
-          </li>
+            {s.children.filter((c) => (c.count ?? 0) > 0).length > 1 && (
+              <ul class="subs">
+                {s.children.filter((c) => (c.count ?? 0) > 0).map((c) => (
+                  <li><a href={`/category/${c.slug}`}>{c.name}</a> <span class="n">{c.count}</span></li>
+                ))}
+              </ul>
+            )}
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   </div>
 </Base>
@@ -73,14 +69,16 @@ const jsonLd = {
 
   .block { margin-top: 3.5rem; }
   .block h2 { margin-bottom: 1.25rem; }
-  .cats { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); border-top: 2px solid var(--ink); }
-  .cats li { border-bottom: 1px solid var(--rule); }
-  .cats a {
-    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 0.9rem;
-    padding: 1rem 0.5rem; color: var(--ink); text-decoration: none; align-items: end;
+  .sections {
+    display: grid; gap: 0 2rem; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    border-top: 2px solid var(--ink);
   }
-  .cats a:hover .cname { text-decoration: underline; }
-  .num { grid-row: 1 / 3; font: 900 3.2rem/0.85 var(--display); font-stretch: 70%; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .cname { font: 800 1.35rem/1.1 var(--display); font-stretch: 105%; }
-  .cunit { color: var(--ink-soft); font-size: 0.9rem; }
+  .sec { border-bottom: 1px solid var(--rule); padding: 1rem 0.25rem 1.1rem; }
+  .sec-h { display: flex; align-items: baseline; gap: 0.8rem; color: var(--ink); text-decoration: none; }
+  .sec-h:hover .sname { text-decoration: underline; }
+  .num { font: 900 2.6rem/0.9 var(--display); font-stretch: 70%; font-variant-numeric: tabular-nums; min-width: 2.2ch; }
+  .sname { font: 800 1.3rem/1.15 var(--display); font-stretch: 100%; }
+  .subs { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.95rem; }
+  .subs a { color: var(--ink-soft); }
+  .subs .n { color: var(--ink-soft); font-size: 0.8rem; opacity: 0.8; }
 </style>

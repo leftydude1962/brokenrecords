@@ -3,16 +3,19 @@ import Base from "../../layouts/Base.astro";
 import Stat from "../../components/Stat.astro";
 import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
-import { getRecord, getRecords, getCategory, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
+import { getRecord, getRecords, getTaxonomy, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
 if (!record) {
   Astro.response.status = 404;
 }
 let related: Awaited<ReturnType<typeof getRecords>> = [];
-if (record?.categories) {
-  const cat = await getCategory(record.categories.slug);
-  if (cat) related = (await getRecords({ categoryId: cat.id })).filter((r) => r.slug !== record.slug).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url)).slice(0, 4);
+const { sectionOf, categories } = await getTaxonomy();
+const section = record?.categories ? sectionOf[record.categories.slug] ?? null : null;
+const ownCat = record?.categories ? categories.find((c) => c.slug === record.categories!.slug) : undefined;
+const isTopLevel = !!ownCat && !ownCat.parent_id;
+if (record?.categories && ownCat) {
+  related = (await getRecords({ categoryId: ownCat.id })).filter((r) => r.slug !== record.slug).sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url)).slice(0, 4);
 }
 cacheFor(3600, Astro.response);
 
@@ -30,12 +33,10 @@ const jsonLd = record && {
   "@type": "BreadcrumbList",
   itemListElement: [
     { "@type": "ListItem", position: 1, name: "Broken Records", item: "https://brokenrecords.com/" },
-    record.categories && {
-      "@type": "ListItem", position: 2, name: record.categories.name,
-      item: `https://brokenrecords.com/category/${record.categories.slug}`,
-    },
-    { "@type": "ListItem", position: 3, name: record.title, item: `https://brokenrecords.com/records/${record.slug}` },
-  ].filter(Boolean),
+    section && !isTopLevel && { "@type": "ListItem", name: section.name, item: `https://brokenrecords.com/category/${section.slug}` },
+    record.categories && { "@type": "ListItem", name: record.categories.name, item: `https://brokenrecords.com/category/${record.categories.slug}` },
+    { "@type": "ListItem", name: record.title, item: `https://brokenrecords.com/records/${record.slug}` },
+  ].filter(Boolean).map((x, i) => ({ ...(x as object), position: i + 1 })),
 };
 
 const facts = record
@@ -59,6 +60,7 @@ const facts = record
           <div class="rec-main">
           <nav class="crumbs muted" aria-label="Breadcrumb">
             <a href="/">Home</a>
+            {section && !isTopLevel && <> / <a href={`/category/${section.slug}`}>{section.name}</a></>}
             {record.categories && <> / <a href={`/category/${record.categories.slug}`}>{record.categories.name}</a></>}
           </nav>
           <h1 class="rec-h1">{record.title}</h1>

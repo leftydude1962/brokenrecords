@@ -24,10 +24,10 @@ const GROUPS: Record<string, string[]> = {
   basketball_hockey: ["basketball", "hockey"],
   soccer_tennis_golf: ["soccer", "tennis", "golf"],
   music_movies: ["music", "movies"],
-  earth: ["weather", "nature", "architecture"],
+  earth: ["weather", "nature", "architecture", "plants"],
   people_speed_space: ["people", "animals", "speed", "space"],
   college_motorsports: ["college-sports", "motorsports"],
-  money_internet_games: ["money", "internet", "games"],
+  money_internet_games: ["money", "internet", "games", "food"],
 };
 
 type Rec = { id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null; unit: string | null; better_direction: "higher" | "lower" | null; achieved_on: string | null; category_id: string; location: string | null; governing_body: string | null };

@@ -1,27 +1,36 @@
 ---
 import Base from "../../layouts/Base.astro";
-import { getCategories, cacheFor } from "../../lib/data";
-const categories = await getCategories();
+import { getTaxonomy, cacheFor } from "../../lib/data";
+const { sections } = await getTaxonomy();
 cacheFor(3600, Astro.response);
 ---
-<Base title="All categories | Broken Records" description="Browse world records by category: sport, architecture, nature, people, animals and more.">
+<Base title="All categories | Broken Records" description="Browse world records in sports, nature, architecture, animals, people, science, space, entertainment, food and money.">
   <div class="wrap">
     <h1 class="h">Categories</h1>
-    <ul class="cats">
-      {categories.map((c) => (
-        <li>
-          <a href={`/category/${c.slug}`}>{c.name}</a>
-          <span class="count">{c.count ? `${c.count} ${c.count === 1 ? "record" : "records"}` : "Coming soon"}</span>
-        </li>
-      ))}
-    </ul>
+    {sections.map((s) => (
+      <section class="sec">
+        <h2><a href={`/category/${s.slug}`}>{s.name}</a> <span class="count">{s.count} records</span></h2>
+        <ul class="cats">
+          {s.children.map((c) => (
+            <li>
+              <a href={`/category/${c.slug}`}>{c.name}</a>
+              <span class="count">{c.count ? `${c.count} ${c.count === 1 ? "record" : "records"}` : "Coming soon"}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
   </div>
 </Base>
 
 <style>
   .h { padding-top: 2.5rem; margin-bottom: 1.5rem; }
-  .cats { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
-  .cats li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.85rem 0.25rem; border-bottom: 1px solid var(--rule); }
-  .cats a { font: 700 1.2rem/1.3 var(--display); font-stretch: 100%; }
-  .count { color: var(--ink-soft); font-size: 0.95rem; }
+  .sec { margin-bottom: 2.25rem; }
+  .sec h2 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  .sec h2 a { color: var(--ink); text-decoration: none; }
+  .sec h2 a:hover { text-decoration: underline; }
+  .cats { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); column-gap: 2rem; }
+  .cats li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.7rem 0.25rem; border-bottom: 1px solid var(--rule); }
+  .cats a { font: 700 1.1rem/1.3 var(--display); font-stretch: 100%; }
+  .count { color: var(--ink-soft); font-size: 0.9rem; font-weight: 400; font-family: var(--serif); }
 </style>

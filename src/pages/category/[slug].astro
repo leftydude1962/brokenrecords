@@ -1,47 +1,98 @@
 ---
+// One page for both levels. A section (Sports) shows every record in its categories, with a
+// filter row (Baseball, Football...). A category (Baseball) shows its own records.
 import Base from "../../layouts/Base.astro";
 import RecordCards from "../../components/RecordCards.astro";
-import { getCategory, getRecords, cacheFor, MERGED_CATEGORIES } from "../../lib/data";
+import { getTaxonomy, getRecords, cacheFor, MERGED_CATEGORIES } from "../../lib/data";
 
 const moved = MERGED_CATEGORIES[Astro.params.slug!];
 if (moved) return Astro.redirect(`/category/${moved}`, 301);
 
-const category = await getCategory(Astro.params.slug!);
-if (!category) Astro.response.status = 404;
-const records = category ? await getRecords({ categoryId: category.id }) : [];
+const { sectionOf, categories } = await getTaxonomy();
+const slug = Astro.params.slug!;
+const cat = categories.find((c) => c.slug === slug) ?? null;
+const section = sectionOf[slug] ?? null;
+const isSection = !!cat && !cat.parent_id;
+const children = isSection && section ? section.children.filter((c) => (c.count ?? 0) > 0) : [];
+if (!cat) Astro.response.status = 404;
+
+const ids = isSection && section ? [section.id, ...section.children.map((c) => c.id)] : cat ? [cat.id] : [];
+const records = ids.length
+  ? (await getRecords({ categoryIds: ids })).sort(
+      (a, b) => Number(b.featured) - Number(a.featured) || Number(!!b.video_url) - Number(!!a.video_url) || Number(!!b.poster_url) - Number(!!a.poster_url),
+    )
+  : [];
 cacheFor(3600, Astro.response);
 
-const title = category ? `${category.name} world records | Broken Records` : "Category not found | Broken Records";
-const description = category
-  ? `Current world records in ${category.name.toLowerCase()}, with holders, values, and sources.`
+const name = cat?.name ?? "";
+const title = cat ? `${name} world records | Broken Records` : "Category not found | Broken Records";
+const description = cat
+  ? `${records.length} current world records in ${name.toLowerCase()}, with holders, values and sources.`
   : "This category does not exist.";
+const image = records.find((r) => r.featured && r.poster_url)?.poster_url ?? records.find((r) => r.poster_url)?.poster_url;
 ---
-<Base title={title} description={description} noindex={!category || records.length === 0} image={records.find((r) => r.featured && r.poster_url)?.poster_url ?? records.find((r) => r.poster_url)?.poster_url}>
+<Base title={title} description={description} noindex={!cat || records.length === 0} image={image}>
   <section class="band">
-  <div class="wrap">
-    <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/category">Categories</a></nav>
-    {category ? (
-      <>
-        <h1>{category.name} records</h1>
-        {records.length > 0 ? (
-          <div class="list"><RecordCards records={[...records].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(!!b.poster_url) - Number(!!a.poster_url))} /></div>
-        ) : (
-          <p class="empty">No {category.name.toLowerCase()} records are published yet. <a href="/">See all records</a>.</p>
-        )}
-      </>
-    ) : (
-      <>
-        <h1>No category at this address.</h1>
-        <p class="empty"><a href="/category">See all categories</a>.</p>
-      </>
-    )}
-  </div>
+    <div class="wrap">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        {!isSection && section && <> / <a href={`/category/${section.slug}`}>{section.name}</a></>}
+      </nav>
+      {cat ? (
+        <>
+          <h1>{name}</h1>
+          <p class="count">{records.length} {records.length === 1 ? "record" : "records"}</p>
+          {children.length > 1 && (
+            <div class="chips" role="toolbar" aria-label={`Filter ${name}`}>
+              <button type="button" class="chip on" data-filter="" aria-pressed="true">All</button>
+              {children.map((c) => <button type="button" class="chip" data-filter={c.slug} aria-pressed="false">{c.name} <span class="n">{c.count}</span></button>)}
+            </div>
+          )}
+          {records.length > 0 ? (
+            <div class="list"><RecordCards records={records} filterable={children.length > 1} /></div>
+          ) : (
+            <p class="empty">No {name.toLowerCase()} records are published yet. <a href="/">See all categories</a>.</p>
+          )}
+        </>
+      ) : (
+        <>
+          <h1>No category at this address.</h1>
+          <p class="empty"><a href="/category">See all categories</a>.</p>
+        </>
+      )}
+    </div>
   </section>
 </Base>
+
+<script>
+  // The filter row narrows the cards to one category. Without JavaScript every card simply shows.
+  const chips = document.querySelectorAll<HTMLButtonElement>(".chip");
+  const cards = document.querySelectorAll<HTMLElement>("[data-cards] .card");
+  chips.forEach((chip) => chip.addEventListener("click", () => {
+    const f = chip.dataset.filter;
+    chips.forEach((c) => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-pressed", String(on)); });
+    let n = 0;
+    cards.forEach((card) => {
+      const show = !f || card.dataset.cat === f;
+      card.hidden = !show;
+      const k = card.querySelector(".kicker");
+      if (show && k) k.textContent = k.textContent!.replace(/^\d+ \/ /, `${String(++n).padStart(2, "0")} / `);
+    });
+  }));
+</script>
 
 <style>
   .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; color: #a9b6c2; }
   h1 { color: #fff; }
-  .list { margin-top: 2rem; }
+  .count { color: #a9b6c2; margin: 0.4rem 0 0; }
+  .chips { display: flex; gap: 0.5rem; overflow-x: auto; padding: 1.5rem 0 0.25rem; scrollbar-width: thin; }
+  .chip {
+    flex: none; font: 700 0.8rem/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 0.7rem 1rem; border-radius: 3px; border: 1px solid #34434f; background: transparent; color: #e6ebef; cursor: pointer;
+  }
+  .chip .n { opacity: 0.6; margin-left: 0.2rem; }
+  .chip:hover { border-color: #e6ebef; }
+  .chip.on { background: var(--amber); border-color: var(--amber); color: #111; }
+  .list { margin-top: 1.5rem; }
   .empty { margin-top: 1.5rem; max-width: 55ch; color: #a9b6c2; }
 </style>

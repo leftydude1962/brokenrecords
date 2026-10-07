@@ -9,10 +9,10 @@ interface Props {
   filterable?: boolean;
   /** "five" lays 10 cards out as two rows of five on wide screens. */
   layout?: "grid" | "five";
-  /** When set, each card links to its category page and shows that category's record count. */
-  categoryCounts?: Record<string, number>;
+  /** When set, each card is labeled with its section and links to the section page. */
+  sectionOf?: Record<string, { slug: string; name: string; count?: number }>;
 }
-const { records, numbered = true, filterable = false, layout = "grid", categoryCounts } = Astro.props;
+const { records, numbered = true, filterable = false, layout = "grid", sectionOf } = Astro.props;
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -22,13 +22,12 @@ const pad = (n: number) => String(n).padStart(2, "0");
     const v = formatValue(r);
     const value = v.value || "—";
     const size = value.length > 9 ? "xs" : value.length > 6 ? "s" : value.length > 4 ? "m" : "l";
-    const cat = r.categories?.name ?? "Record";
     const sub = [r.holder, r.location].filter(Boolean).join(" · ");
-    const catSlug = r.categories?.slug;
-    const toCat = categoryCounts && catSlug;
-    const href = toCat ? `/category/${catSlug}` : `/records/${r.slug}`;
-    const n = toCat ? categoryCounts[catSlug] : 0;
-    const go = toCat && n > 1 ? `See all ${n} ↗` : "See record ↗";
+    const section = sectionOf && r.categories ? sectionOf[r.categories.slug] : undefined;
+    const cat = section?.name ?? r.categories?.name ?? "Record";
+    const href = section ? `/category/${section.slug}` : `/records/${r.slug}`;
+    const n = section?.count ?? 0;
+    const go = section && n > 1 ? `See all ${n} ↗` : "See record ↗";
     return (
       <li class="card" data-cat={r.categories?.slug} style={`--h:${hue(r.categories?.slug ?? r.slug)}`}>
         <a href={href} class="card-link">

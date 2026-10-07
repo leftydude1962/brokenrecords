@@ -5,7 +5,9 @@ export const SUPABASE_URL = "https://ccwmynoumrqpvnmpcgch.supabase.co";
 export const SUPABASE_KEY = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 
 export type Source = { url: string; publisher: string | null; license: string | null };
-export type Category = { id: string; slug: string; name: string; count?: number };
+export type Category = { id: string; slug: string; name: string; parent_id?: string | null; sort_order?: number | null; count?: number };
+/** A top-level section (Sports, Nature and Earth...) with the categories inside it. */
+export type Section = Category & { children: Category[] };
 export type RecordRow = {
   id: string;
   slug: string;
@@ -47,13 +49,34 @@ export const MERGED_CATEGORIES: Record<string, string> = {
   structures: "architecture",
 };
 
+// Every category with its published record count. Merged (empty) categories are left out.
 export async function getCategories(): Promise<Category[]> {
   const rows = await rest<Array<Category & { records: { count: number }[] }>>(
-    "categories?select=id,slug,name,records(count)&records.status=eq.published&order=name.asc",
+    "categories?select=id,slug,name,parent_id,sort_order,records(count)&records.status=eq.published&order=name.asc",
   );
   return rows
     .filter((r) => !(r.slug in MERGED_CATEGORIES))
-    .map((r) => ({ id: r.id, slug: r.slug, name: r.name, count: r.records?.[0]?.count ?? 0 }));
+    .map((r) => ({ id: r.id, slug: r.slug, name: r.name, parent_id: r.parent_id ?? null, sort_order: r.sort_order ?? null, count: r.records?.[0]?.count ?? 0 }));
+}
+
+// The two-level structure: 10 sections, each holding categories. A section's count is the
+// total of its categories. sectionOf maps any category slug (or section slug) to its section.
+export async function getTaxonomy() {
+  const cats = await getCategories();
+  const sections: Section[] = cats
+    .filter((c) => !c.parent_id)
+    .map((s) => {
+      const children = cats.filter((c) => c.parent_id === s.id).sort((a, b) => a.name.localeCompare(b.name));
+      return { ...s, children, count: (s.count ?? 0) + children.reduce((n, c) => n + (c.count ?? 0), 0) };
+    })
+    .filter((s) => s.children.length > 0 || (s.count ?? 0) > 0)
+    .sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99) || a.name.localeCompare(b.name));
+  const sectionOf: Record<string, Section> = {};
+  for (const s of sections) {
+    sectionOf[s.slug] = s;
+    for (const c of s.children) sectionOf[c.slug] = s;
+  }
+  return { sections, sectionOf, categories: cats };
 }
 
 export async function getCategory(slug: string): Promise<Category | null> {
@@ -61,9 +84,10 @@ export async function getCategory(slug: string): Promise<Category | null> {
   return rows[0] ?? null;
 }
 
-export async function getRecords(opts: { categoryId?: string; limit?: number } = {}): Promise<RecordRow[]> {
+export async function getRecords(opts: { categoryId?: string; categoryIds?: string[]; limit?: number } = {}): Promise<RecordRow[]> {
   let q = `records?select=${RECORD_SELECT}&status=eq.published&order=updated_at.desc`;
   if (opts.categoryId) q += `&category_id=eq.${opts.categoryId}`;
+  if (opts.categoryIds?.length) q += `&category_id=in.(${opts.categoryIds.join(",")})`;
   if (opts.limit) q += `&limit=${opts.limit}`;
   return rest<RecordRow[]>(q);
 }
@@ -102,6 +126,10 @@ export function formatValue(r: Displayable): { value: string; unit: string } {
     }
     case "hPa":
       return { value: trim(n * 0.0295300, 2), unit: "inHg" };
+    case "m2":
+      return { value: trim(n * 10.7639104, 0), unit: "sq ft" };
+    case "m3":
+      return { value: trim(n * 35.3146667, 0), unit: "cu ft" };
     case "km2": {
       const sq = n / SQMI;
       if (sq >= 1_000_000) return { value: trim(sq / 1_000_000, 2), unit: "million sq mi" };
@@ -157,6 +185,10 @@ export function formatMetric(r: Pick<RecordRow, "value_numeric" | "value_text" |
       if (n < 1) return { value: trim(n * 100, 1), unit: "cm" };
       if (n >= 10000) return { value: trim(n / 1000, 2), unit: "km" };
       return { value: lead && /\sm\b/.test(r.value_text ?? "") ? lead : trim(n, 2), unit: "m" };
+    case "m2":
+      return { value: trim(n, 0), unit: "m²" };
+    case "m3":
+      return { value: trim(n, 0), unit: "m³" };
     case "km2":
       if (n >= 1_000_000) return { value: trim(n / 1_000_000, 2), unit: "million km²" };
       return { value: trim(n, 0), unit: "km²" };

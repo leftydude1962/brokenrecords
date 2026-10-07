@@ -7,7 +7,7 @@ export const GET: APIRoute = async () => {
   const urls = [
     { loc: `${base}/`, lastmod: undefined as string | undefined },
     { loc: `${base}/category`, lastmod: undefined },
-    ...categories.filter((c) => (c.count ?? 0) > 0).map((c) => ({ loc: `${base}/category/${c.slug}`, lastmod: undefined })),
+    ...categories.filter((c) => (c.count ?? 0) > 0 || !c.parent_id).map((c) => ({ loc: `${base}/category/${c.slug}`, lastmod: undefined })),
     ...records.map((r) => ({ loc: `${base}/records/${r.slug}`, lastmod: (r.last_verified_at ?? r.updated_at ?? "").slice(0, 10) || undefined })),
   ];
   const body =
