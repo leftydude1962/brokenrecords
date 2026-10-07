@@ -39,11 +39,21 @@ async function rest<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Old category addresses that were folded into another category. Their pages redirect,
+// and they are left out of category lists.
+export const MERGED_CATEGORIES: Record<string, string> = {
+  buildings: "architecture",
+  bridges: "architecture",
+  structures: "architecture",
+};
+
 export async function getCategories(): Promise<Category[]> {
   const rows = await rest<Array<Category & { records: { count: number }[] }>>(
     "categories?select=id,slug,name,records(count)&records.status=eq.published&order=name.asc",
   );
-  return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, count: r.records?.[0]?.count ?? 0 }));
+  return rows
+    .filter((r) => !(r.slug in MERGED_CATEGORIES))
+    .map((r) => ({ id: r.id, slug: r.slug, name: r.name, count: r.records?.[0]?.count ?? 0 }));
 }
 
 export async function getCategory(slug: string): Promise<Category | null> {

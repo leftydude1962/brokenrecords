@@ -4,7 +4,7 @@ import { getCategories, cacheFor } from "../../lib/data";
 const categories = await getCategories();
 cacheFor(3600, Astro.response);
 ---
-<Base title="All categories | Broken Records" description="Browse world records by category: sport, buildings, bridges, people, animals and more.">
+<Base title="All categories | Broken Records" description="Browse world records by category: sport, architecture, nature, people, animals and more.">
   <div class="wrap">
     <h1 class="h">Categories</h1>
     <ul class="cats">

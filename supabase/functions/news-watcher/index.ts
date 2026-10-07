@@ -23,7 +23,7 @@ const GROUPS: Record<string, string[]> = {
   basketball_hockey: ["basketball", "hockey"],
   soccer_tennis_golf: ["soccer", "tennis", "golf"],
   music_movies: ["music", "movies"],
-  earth: ["weather", "nature", "structures", "buildings", "bridges"],
+  earth: ["weather", "nature", "architecture"],
   people_speed_space: ["people", "animals", "speed", "space"],
   college_motorsports: ["college-sports", "motorsports"],
   money_internet_games: ["money", "internet", "games"],

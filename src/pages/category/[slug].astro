@@ -1,7 +1,10 @@
 ---
 import Base from "../../layouts/Base.astro";
 import RecordCards from "../../components/RecordCards.astro";
-import { getCategory, getRecords, cacheFor } from "../../lib/data";
+import { getCategory, getRecords, cacheFor, MERGED_CATEGORIES } from "../../lib/data";
+
+const moved = MERGED_CATEGORIES[Astro.params.slug!];
+if (moved) return Astro.redirect(`/category/${moved}`, 301);
 
 const category = await getCategory(Astro.params.slug!);
 if (!category) Astro.response.status = 404;
