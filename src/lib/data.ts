@@ -75,8 +75,20 @@ export function formatValue(r: Displayable): { value: string; unit: string } {
     case "m":
       if (vertical || n < 10) return lengthUS(n, true);
       return lengthUS(n, false);
-    case "km":
-      return { value: trim(n * 1000 / MI, 0), unit: "miles" };
+    case "km": {
+      const mi = n * 1000 / MI;
+      return { value: trim(mi, mi >= 100 ? 0 : 1), unit: "miles" };
+    }
+    case "mm":
+    case "cm": {
+      // Rain, snow and hail read in inches; very deep totals switch to feet.
+      const inches = n / (r.unit === "mm" ? 25.4 : 2.54);
+      if (inches >= 240 && /snow/i.test(r.title ?? "")) return { value: trim(inches / 12, 0), unit: "ft" };
+      if (inches >= 100) return { value: trim(inches, 0), unit: "in" };
+      return { value: trim(inches, 1), unit: "in" };
+    }
+    case "hPa":
+      return { value: trim(n * 0.0295300, 2), unit: "inHg" };
     case "km2": {
       const sq = n / SQMI;
       if (sq >= 1_000_000) return { value: trim(sq / 1_000_000, 2), unit: "million sq mi" };
@@ -85,7 +97,7 @@ export function formatValue(r: Displayable): { value: string; unit: string } {
     case "kg": {
       const lb = n / LB;
       if (lb >= 4000) return { value: trim(lb / 2000, lb / 2000 >= 100 ? 0 : 1), unit: "tons" };
-      return { value: trim(lb, 0), unit: "lb" };
+      return { value: trim(lb, lb < 10 ? 2 : 0), unit: "lb" };
     }
     case "km/h": {
       const mph = n / 1.609344;
@@ -144,8 +156,28 @@ export function formatMetric(r: Pick<RecordRow, "value_numeric" | "value_text" |
       return { value: trim(Math.floor(n), 0), unit: "days" };
     case "°C":
       return { value: trim(n, 1).replace("-", "−"), unit: "°C" };
-    default:
-      return { value: trim(n, 2), unit: r.unit ?? "" };
+    case "avg":
+      // Batting average, written the baseball way: .372
+      return { value: n.toFixed(3).replace(/^0/, ""), unit: "" };
+    case "USD":
+      if (n >= 1e9) return { value: "$" + trim(n / 1e9, 2), unit: "billion" };
+      if (n >= 1e6) return { value: "$" + trim(n / 1e6, 0), unit: "million" };
+      return { value: "$" + trim(n, 0), unit: "" };
+    case "magnitude":
+      return { value: trim(n, 1), unit: "magnitude" };
+    case "VEI":
+      return { value: trim(n, 0), unit: "on the VEI scale" };
+    case "s":
+    case "years":
+      // Race times (9.58 s, 1:40.91) and ages read the same in any unit system.
+      return formatMetric(r);
+    default: {
+      // Counts. Large ones read as "5.62 billion streams" so they fit on the board.
+      const u = r.unit ?? "";
+      if (n >= 1e9) return { value: trim(n / 1e9, 2), unit: `billion ${u}`.trim() };
+      if (n >= 1e6) return { value: trim(n / 1e6, n / 1e6 >= 100 ? 0 : 1), unit: `million ${u}`.trim() };
+      return { value: trim(n, 2), unit: u };
+    }
   }
 }
 
