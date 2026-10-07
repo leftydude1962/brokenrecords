@@ -1,7 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import Departures from "../components/Departures.astro";
-import RecordList from "../components/RecordList.astro";
+import RecordCards from "../components/RecordCards.astro";
 import { getCategories, getRecords, cacheFor } from "../lib/data";
 
 const BOARD_ROWS = 8;
@@ -20,7 +20,11 @@ const start = groups.length ? day % groups.length : 0;
 const onBoard = [...groups.slice(start), ...groups.slice(0, start)]
   .slice(0, BOARD_ROWS)
   .map((list) => list[day % list.length]);
-const rest = [...records].sort((a, b) => a.title.localeCompare(b.title));
+// The card grid mixes categories (sport, nature, money, sport...) so the first screen is varied.
+// Within each category, records that already have a clip come first.
+const queues = groups.map((list) => [...list].sort((a, b) => Number(!!b.video_url) - Number(!!a.video_url) || a.title.localeCompare(b.title)));
+const mixed: typeof records = [];
+for (let i = 0; mixed.length < records.length; i++) for (const q of queues) if (q[i]) mixed.push(q[i]);
 cacheFor(3600, Astro.response);
 
 const jsonLd = {
@@ -46,6 +50,17 @@ const jsonLd = {
     </div>
   </section>
 
+  <section class="band explore" aria-labelledby="explore">
+    <div class="wrap">
+      <h2 id="explore">All {records.length} records</h2>
+      <div class="chips" role="toolbar" aria-label="Filter by category">
+        <button type="button" class="chip on" data-filter="" aria-pressed="true">All records</button>
+        {live.map((c) => <button type="button" class="chip" data-filter={c.slug} aria-pressed="false">{c.name}</button>)}
+      </div>
+      <RecordCards records={mixed} filterable />
+    </div>
+  </section>
+
   <div class="wrap">
     <section class="block" aria-labelledby="cats">
       <h2 id="cats">Browse by category</h2>
@@ -63,22 +78,25 @@ const jsonLd = {
       <p class="more"><a href="/category">See every category, including the ones on the way</a></p>
     </section>
 
-    {rest.length > 0 && (
-      <section class="block" aria-labelledby="latest">
-        <h2 id="latest">All {records.length} records</h2>
-        {live.map((c) => {
-          const list = rest.filter((r) => r.categories?.slug === c.slug);
-          return list.length > 0 && (
-            <div class="group">
-              <h3 class="group-h"><a href={`/category/${c.slug}`}>{c.name}</a></h3>
-              <RecordList records={list} />
-            </div>
-          );
-        })}
-      </section>
-    )}
   </div>
 </Base>
+
+<script>
+  // Category chips filter the card grid in place. Without JavaScript every card simply shows.
+  const chips = document.querySelectorAll<HTMLButtonElement>(".chip");
+  const cards = document.querySelectorAll<HTMLElement>("[data-cards] .card");
+  chips.forEach((chip) => chip.addEventListener("click", () => {
+    const f = chip.dataset.filter;
+    chips.forEach((c) => { const on = c === chip; c.classList.toggle("on", on); c.setAttribute("aria-pressed", String(on)); });
+    let n = 0;
+    cards.forEach((card) => {
+      const show = !f || card.dataset.cat === f;
+      card.hidden = !show;
+      const k = card.querySelector(".kicker");
+      if (show && k) k.textContent = k.textContent!.replace(/^\d+ \/ /, `${String(++n).padStart(2, "0")} / `);
+    });
+  }));
+</script>
 
 <style>
   .hero { padding-top: 2.5rem; padding-bottom: 3rem; }
@@ -101,8 +119,16 @@ const jsonLd = {
   .cname { font: 800 1.35rem/1.1 var(--display); font-stretch: 105%; }
   .cunit { color: var(--ink-soft); font-size: 0.9rem; }
   .more { margin-top: 1rem; }
-  .group { margin-top: 2.25rem; }
-  .group-h { font: 800 1.25rem/1.2 var(--display); margin-bottom: 0.6rem; }
-  .group-h a { color: var(--ink); text-decoration: none; }
-  .group-h a:hover { text-decoration: underline; }
+  .chips {
+    display: flex; gap: 0.5rem; overflow-x: auto; padding: 0 0 1rem; margin-bottom: 0.5rem;
+    scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+  }
+  .explore { padding-top: 0.5rem; border-top: 1px solid #22303d; }
+  .explore h2 { color: #fff; margin: 2.5rem 0 1.25rem; }
+  .chip {
+    flex: none; font: 700 0.8rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 0.7rem 1rem; border-radius: 3px; border: 1px solid #34434f; background: transparent; color: #e6ebef; cursor: pointer;
+  }
+  .chip:hover { border-color: #e6ebef; }
+  .chip.on { background: var(--amber); border-color: var(--amber); color: #111; }
 </style>

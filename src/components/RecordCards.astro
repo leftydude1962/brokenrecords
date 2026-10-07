@@ -1,0 +1,137 @@
+---
+// Cinematic record cards. Each card shows the record's poster image, plays its short muted clip while
+// the card is on screen, and lays the number, title and holder over it. Records without media yet get a
+// tinted backdrop so the grid still reads as one set.
+import { formatValue, type RecordRow } from "../lib/data";
+interface Props { records: RecordRow[]; numbered?: boolean; filterable?: boolean }
+const { records, numbered = true, filterable = false } = Astro.props;
+
+const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const pad = (n: number) => String(n).padStart(2, "0");
+---
+<ul class="cards" data-cards>
+  {records.map((r, i) => {
+    const v = formatValue(r);
+    const value = v.value || "—";
+    const size = value.length > 9 ? "xs" : value.length > 6 ? "s" : value.length > 4 ? "m" : "l";
+    const cat = r.categories?.name ?? "Record";
+    const sub = [r.holder, r.location].filter(Boolean).join(" · ");
+    return (
+      <li class="card" data-cat={r.categories?.slug} style={`--h:${hue(r.categories?.slug ?? r.slug)}`}>
+        <a href={`/records/${r.slug}`} class="card-link">
+          {r.poster_url ? (
+            <img class="media" src={r.poster_url} alt="" loading={i < 4 ? "eager" : "lazy"} decoding="async" width="576" height="1024" />
+          ) : (
+            <span class="media fallback" aria-hidden="true"></span>
+          )}
+          {r.video_url && (
+            <video class="media vid" data-src={r.video_url} muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+          )}
+          <span class="shade" aria-hidden="true"></span>
+          <span class="top">
+            <span class="kicker">{numbered ? `${pad(i + 1)} / ` : ""}{cat}</span>
+            {r.video_url && <span class="play" aria-hidden="true"></span>}
+          </span>
+          <span class="figure">
+            <span class:list={["num", size]}>{value}</span>
+            {v.unit && <span class="unit">{v.unit}</span>}
+          </span>
+          <span class="bottom">
+            <span class="title">{r.title}</span>
+            {sub && <span class="sub">{sub}</span>}
+            <span class="brand"><span class="rule"></span><span class="go">See record ↗</span></span>
+          </span>
+        </a>
+      </li>
+    );
+  })}
+</ul>
+{filterable && <p class="none" hidden data-none>No records in this category yet.</p>}
+
+<script>
+  // Play each clip only while its card is on screen. Clips are not downloaded until a card first
+  // scrolls into view, and never when the visitor prefers reduced motion or has data saver on.
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+  if (!reduce && !saveData && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const v = e.target as HTMLVideoElement;
+        if (e.isIntersecting) {
+          if (!v.src && v.dataset.src) v.src = v.dataset.src;
+          v.play().then(() => v.classList.add("on")).catch(() => {});
+        } else {
+          v.pause();
+        }
+      }
+    }, { threshold: 0.35 });
+    document.querySelectorAll<HTMLVideoElement>("[data-cards] video[data-src]").forEach((v) => io.observe(v));
+  }
+</script>
+
+<style>
+  .cards {
+    list-style: none; margin: 0; padding: 0; display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  }
+  .card { position: relative; border-radius: 6px; overflow: hidden; background: #0b1117; isolation: isolate; }
+  .card[hidden] { display: none; }
+  .card-link {
+    position: relative; display: flex; flex-direction: column; justify-content: space-between;
+    aspect-ratio: 4 / 5; padding: 1rem 1.1rem 1rem; color: #fff; text-decoration: none;
+  }
+  @media (min-width: 40rem) { .card-link { aspect-ratio: 9 / 16; } }
+  .media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; transition: transform 0.6s ease; }
+  .vid { opacity: 0; transition: opacity 0.6s ease, transform 0.6s ease; }
+  .vid:global(.on) { opacity: 1; }
+  .fallback {
+    background:
+      radial-gradient(120% 70% at 70% 60%, hsl(var(--h) 55% 32% / 0.85), transparent 60%),
+      radial-gradient(90% 60% at 10% 100%, hsl(calc(var(--h) + 40) 60% 22% / 0.9), transparent 70%),
+      linear-gradient(160deg, #101820, #070b10);
+  }
+  .shade {
+    position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(180deg, rgb(0 0 0 / 0.55) 0%, rgb(0 0 0 / 0) 38%, rgb(0 0 0 / 0) 52%, rgb(0 0 0 / 0.85) 100%);
+  }
+  .card-link:hover .media, .card-link:focus-visible .media { transform: scale(1.04); }
+  .card-link:focus-visible { outline: 3px solid var(--amber); outline-offset: -3px; }
+
+  .top { display: flex; justify-content: space-between; align-items: center; min-height: 26px; }
+  .kicker { font: 600 0.72rem/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: #e6ebef; }
+  .play {
+    width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid rgb(255 255 255 / 0.85); position: relative;
+  }
+  .play::after {
+    content: ""; position: absolute; left: 9px; top: 6.5px; border-style: solid; border-width: 5.5px 0 5.5px 8px;
+    border-color: transparent transparent transparent #fff;
+  }
+
+  .figure { margin-top: 0.6rem; margin-bottom: auto; display: flex; flex-direction: column; }
+  .num {
+    font: 900 4.6rem/0.88 var(--display); font-stretch: 62%; letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums; color: #fff; text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+  }
+  .num.m { font-size: 3.9rem; }
+  .num.s { font-size: 3.1rem; }
+  .num.xs { font-size: 2.4rem; }
+  .card:first-child .num { color: var(--amber); }
+  .unit {
+    margin-top: 0.55rem; font: 700 0.95rem/1.1 var(--display); letter-spacing: 0.32em; text-transform: uppercase;
+    color: #f4f6f8;
+  }
+
+  .bottom { display: flex; flex-direction: column; gap: 0.35rem; }
+  .title {
+    font: 850 1.65rem/0.98 var(--display); font-stretch: 72%; text-transform: uppercase; letter-spacing: 0.005em;
+    text-wrap: balance;
+  }
+  .sub { font: 400 0.88rem/1.35 var(--serif); color: #d5dde4; }
+  .brand {
+    margin-top: 0.5rem; display: flex; align-items: center; gap: 0.6rem;
+    font: 600 0.66rem/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: #c3ccd5; white-space: nowrap;
+  }
+  .rule { flex: 1; height: 1px; background: rgb(255 255 255 / 0.3); min-width: 0; }
+  .go { margin-left: auto; letter-spacing: 0.04em; text-transform: none; font-size: 0.78rem; }
+  .none { color: var(--ink-soft); }
+</style>

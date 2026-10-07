@@ -21,12 +21,14 @@ export type RecordRow = {
   status: string;
   last_verified_at: string | null;
   updated_at: string | null;
+  poster_url: string | null;
+  video_url: string | null;
   categories: { slug: string; name: string } | null;
   record_sources: Source[];
 };
 
 const RECORD_SELECT =
-  "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,status,last_verified_at,updated_at,categories(slug,name),record_sources(url,publisher,license)";
+  "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,status,last_verified_at,updated_at,poster_url,video_url,categories(slug,name),record_sources(url,publisher,license)";
 
 async function rest<T>(path: string): Promise<T> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -168,10 +170,6 @@ export function formatMetric(r: Pick<RecordRow, "value_numeric" | "value_text" |
       return { value: trim(n, 1), unit: "magnitude" };
     case "VEI":
       return { value: trim(n, 0), unit: "on the VEI scale" };
-    case "s":
-    case "years":
-      // Race times (9.58 s, 1:40.91) and ages read the same in any unit system.
-      return formatMetric(r);
     default: {
       // Counts. Large ones read as "5.62 billion streams" so they fit on the board.
       const u = r.unit ?? "";
