@@ -27,15 +27,29 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const dryRun = body?.dryRun === true;
   const force = body?.force === true;
+  // {"check": true}: ask Facebook who the token belongs to. Never returns the token itself.
+  if (body?.check === true) {
+    const t = Deno.env.get("FB_PAGE_TOKEN") ?? "";
+    const g = async (path: string) => (await fetch(`${GRAPH}/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(t)}`)).json().catch(() => ({}));
+    return json({
+      FB_PAGE_ID: Deno.env.get("FB_PAGE_ID"),
+      token_length: t.length,
+      me: await g("me?fields=id,name"),
+      pages_this_token_manages: await g("me/accounts?fields=id,name,tasks"),
+    });
+  }
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 
   // Post only at 6 AM Chicago time, once a day.
   const now = new Date();
   const chicagoHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(now));
   if (!force && !dryRun && chicagoHour !== 6) return json({ skipped: `not 6 AM in Chicago (hour ${chicagoHour})` });
-  const { data: today } = await sb.from("social_posts").select("id").eq("platform", "facebook").is("error", null)
-    .gt("posted_at", new Date(now.getTime() - 20 * 3600 * 1000).toISOString()).limit(1);
-  if (!dryRun && today?.length) return json({ skipped: "already posted today" });
+  // One scheduled post per Chicago calendar day. Manual test posts (force) don't count.
+  const chicagoDate = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
+  const { data: recent } = await sb.from("social_posts").select("posted_at,kind").eq("platform", "facebook").is("error", null)
+    .gt("posted_at", new Date(now.getTime() - 30 * 3600 * 1000).toISOString());
+  const postedToday = (recent ?? []).some((p) => p.kind !== "test" && chicagoDate(new Date(p.posted_at)) === chicagoDate(now));
+  if (!dryRun && !force && postedToday) return json({ skipped: "already posted today" });
 
   // Categories and sections, to label the post and rotate through sections.
   const { data: cats } = await sb.from("categories").select("id,slug,name,parent_id");
@@ -100,16 +114,18 @@ Deno.serve(async (req) => {
 
   if (dryRun) return json({ dryRun: true, record: pick.slug, isNews, image: pick.poster_url, message });
 
-  const pageId = Deno.env.get("FB_PAGE_ID");
   const token = Deno.env.get("FB_PAGE_TOKEN");
-  if (!pageId || !token) return json({ error: "FB_PAGE_ID or FB_PAGE_TOKEN secret is not set" }, 500);
+  if (!token) return json({ error: "FB_PAGE_TOKEN secret is not set" }, 500);
+  // A Page token knows its own Page, so ask Facebook for the ID instead of trusting FB_PAGE_ID.
+  const me = await (await fetch(`${GRAPH}/me?fields=id&access_token=${encodeURIComponent(token)}`)).json().catch(() => ({}));
+  const pageId = me?.id ?? Deno.env.get("FB_PAGE_ID");
 
   const form = new URLSearchParams({ url: pick.poster_url!.split("?")[0], caption: message, published: "true", access_token: token });
   const res = await fetch(`${GRAPH}/${pageId}/photos`, { method: "POST", body: form });
   const out = await res.json().catch(() => ({}));
   const ok = res.ok && (out.post_id || out.id);
   await sb.from("social_posts").insert({
-    record_id: pick.id, platform: "facebook", kind: isNews ? "news" : "daily", message,
+    record_id: pick.id, platform: "facebook", kind: force ? "test" : isNews ? "news" : "daily", message,
     external_id: ok ? out.post_id ?? out.id : null, error: ok ? null : JSON.stringify(out.error ?? out).slice(0, 500),
   });
   return json(ok ? { posted: pick.slug, post_id: out.post_id ?? out.id } : { error: out.error ?? out }, ok ? 200 : 502);
