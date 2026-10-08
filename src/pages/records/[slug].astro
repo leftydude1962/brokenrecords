@@ -34,6 +34,15 @@ const description = record
     ? clip(`${record.holder} holds the ${record.title.toLowerCase()} record at ${usText}. ${firstSentence}`)
     : `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${usText}. Sources and last-checked date included.`
   : "This record does not exist.";
+// One-sentence answer at the top of the page. Assistants and search snippets quote it, so it states the record, the holder, the date and the last check.
+const setOn = record ? formatDate(record.achieved_on) : null;
+const checkedOn = record ? formatDate(record.last_checked_at ?? null) : null;
+const quick = record
+  ? (record.status === "superseded"
+      ? `This record, ${usText} by ${record.holder}${setOn ? `, set on ${setOn}` : ""}, has since been broken.`
+      : `The current ${record.title.toLowerCase()} record is ${usText}, held by ${record.holder}${setOn ? `, set on ${setOn}` : ""}.`) +
+    (checkedOn ? ` Last checked ${checkedOn}.` : "")
+  : "";
 const sourceDate = (d?: string | null) => (d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null);
 const pageUrl = record ? `https://brokenrecords.com/records/${record.slug}` : "";
 // Sources, one card per page: the same link with or without "www." or a trailing slash shows once.
@@ -103,6 +112,7 @@ const facts = record
             {record.categories && <> / <a href={`/category/${record.categories.slug}`}>{record.categories.name}</a></>}
           </nav>
           <h1 class="rec-h1">{record.title}</h1>
+          {quick && <p class="quick-answer">{quick}</p>}
           {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
           <Stat record={record} />
           </div>
@@ -184,6 +194,7 @@ const facts = record
   @media (prefers-reduced-motion: reduce) { .rec-media video { display: none; } }
   .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; }
   .rec-h1 { margin-bottom: 1.5rem; color: #fff; font-size: clamp(2.2rem, 1.3rem + 4vw, 4rem); }
+  .quick-answer { color: #fff; font-size: 1.15rem; line-height: 1.5; max-width: 40rem; margin: -0.5rem 0 1.25rem; }
   .flag { background: var(--red); color: #fff; display: inline-block; padding: 0.3rem 0.7rem; border-radius: 4px; margin: 0 0 1rem; font-family: var(--display); font-weight: 600; }
   .facts { margin: 2.5rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 1.25rem 1.5rem; }
   .facts div { border-top: 2px solid var(--ink); padding-top: 0.5rem; }

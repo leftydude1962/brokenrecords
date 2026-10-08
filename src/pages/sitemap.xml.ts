@@ -8,7 +8,8 @@ export const GET: APIRoute = async () => {
     { loc: `${base}/`, lastmod: undefined as string | undefined },
     { loc: `${base}/category`, lastmod: undefined },
     ...categories.filter((c) => (c.count ?? 0) > 0 || !c.parent_id).map((c) => ({ loc: `${base}/category/${c.slug}`, lastmod: undefined })),
-    ...records.map((r) => ({ loc: `${base}/records/${r.slug}`, lastmod: (r.last_verified_at ?? r.updated_at ?? "").slice(0, 10) || undefined })),
+    // lastmod is the last real check, or the last edit if no check has run yet. Never the sync timestamp.
+    ...records.map((r) => ({ loc: `${base}/records/${r.slug}`, lastmod: (r.last_checked_at ?? r.updated_at ?? "").slice(0, 10) || undefined })),
   ];
   const body =
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
