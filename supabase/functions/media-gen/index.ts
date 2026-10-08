@@ -7,7 +7,8 @@
 //   done            -> poster_url is set, and video_url too for featured records
 //   failed          -> two attempts failed; media_error says why
 //
-// Nothing calls this on a schedule; it runs only when invoked. Each call checks the tasks in progress, saves finished
+// A cron job (media-gen-every-5-min) calls this every 5 minutes, so new records get an image within about 10 minutes.
+// A run with nothing to do makes no KIE calls. Each call checks the tasks in progress, saves finished
 // files to Supabase Storage (bucket "media"), and starts new records. Spending is bounded in code:
 // a record that already has media is never regenerated, and no more than MAX_VIDEOS clips are ever
 // made in total. Every other record gets a still image only (about 3 KIE credits each).
@@ -18,7 +19,7 @@ const env = (k: string, d: string) => Deno.env.get(k) ?? d;
 const IMAGE_MODEL = env("MEDIA_IMAGE_MODEL", "seedream/5-flash-text-to-image");
 const VIDEO_MODEL = env("MEDIA_VIDEO_MODEL", "bytedance/seedance-2-fast");
 const RESOLUTION = env("MEDIA_RESOLUTION", "720p");
-const DAILY_CAP = Number(env("MEDIA_DAILY_CAP", "400"));
+const DAILY_CAP = Number(env("MEDIA_DAILY_CAP", "600"));
 const MAX_INFLIGHT = Number(env("MEDIA_MAX_INFLIGHT", "20"));
 // Hard limit on clips, about 124 KIE credits each. Change it here, in code, on purpose.
 const MAX_VIDEOS = 15;
