@@ -87,7 +87,7 @@ const facts = record
       ["Location", record.location],
       ["Date set", formatDate(record.achieved_on)],
       ["Recognized by", record.governing_body],
-      ["Last checked", formatDate(record.last_verified_at)],
+      ["Last checked", formatDate(record.last_checked_at ?? null)],
     ].filter(([, val]) => val) as [string, string][])
   : [];
 ---
