@@ -6,7 +6,7 @@ export const SUPABASE_KEY = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 
 export type Source = { url: string; publisher: string | null; license: string | null; title?: string | null; published_on?: string | null; quote?: string | null };
 /** Original write-up for a record page, made by the record-story job. */
-export type Story = { sections: { heading: string; body: string }[]; quote: { text: string; url: string } | null; conflict?: string | null };
+export type Story = { sections: { heading: string; body: string }[]; quote: { text: string; url: string } | null; conflict?: string | null; issues?: string[] };
 export type Category = { id: string; slug: string; name: string; parent_id?: string | null; sort_order?: number | null; count?: number };
 /** A top-level section (Sports, Nature and Earth...) with the categories inside it. */
 export type Section = Category & { children: Category[] };

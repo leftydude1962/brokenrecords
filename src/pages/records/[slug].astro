@@ -24,7 +24,8 @@ const mv = record ? formatMetric(record) : null;
 const usText = v ? `${v.value}${v.unit ? " " + v.unit : ""}` : "";
 const metricText = mv ? `${mv.value}${mv.unit ? " " + mv.unit : ""}` : "";
 const title = record ? `${record.title}: ${record.holder}, ${usText} | Broken Records` : "Record not found | Broken Records";
-const story = record?.story?.sections?.length ? record.story : null;
+// A story the fact checker flagged (story.issues) stays hidden until it is fixed.
+const story = record?.story?.sections?.length && !record.story.issues?.length ? record.story : null;
 // Search snippet: the story's first sentence when there is one, cut at a word near 155 characters.
 const firstSentence = story ? (story.sections[0].body.match(/^.+?[.!?](\s|$)/)?.[0] ?? story.sections[0].body).trim() : "";
 const clip = (t: string, n = 158) => (t.length <= n ? t : t.slice(0, t.lastIndexOf(" ", n - 1)).replace(/[,;:]$/, "") + "...");
