@@ -24,12 +24,33 @@ const mv = record ? formatMetric(record) : null;
 const usText = v ? `${v.value}${v.unit ? " " + v.unit : ""}` : "";
 const metricText = mv ? `${mv.value}${mv.unit ? " " + mv.unit : ""}` : "";
 const title = record ? `${record.title}: ${record.holder}, ${usText} | Broken Records` : "Record not found | Broken Records";
+const story = record?.story?.sections?.length ? record.story : null;
+// Search snippet: the story's first sentence when there is one, cut at a word near 155 characters.
+const firstSentence = story ? (story.sections[0].body.match(/^.+?[.!?](\s|$)/)?.[0] ?? story.sections[0].body).trim() : "";
+const clip = (t: string, n = 158) => (t.length <= n ? t : t.slice(0, t.lastIndexOf(" ", n - 1)).replace(/[,;:]$/, "") + "...");
 const description = record
-  ? `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${usText}. Sources and last-checked date included.`
+  ? story
+    ? clip(`${record.holder} holds the ${record.title.toLowerCase()} record at ${usText}. ${firstSentence}`)
+    : `The ${record.title.toLowerCase()} record is held by ${record.holder} at ${usText}. Sources and last-checked date included.`
   : "This record does not exist.";
+const sourceDate = (d?: string | null) => (d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null);
+const pageUrl = record ? `https://brokenrecords.com/records/${record.slug}` : "";
+// Sources, one card per page: the same link with or without "www." or a trailing slash shows once.
+const normUrl = (u: string) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
+const sources = record ? record.record_sources.filter((s, i, all) => all.findIndex((o) => normUrl(o.url) === normUrl(s.url)) === i) : [];
+// Search engines cut long headlines with "..."; show a clean ellipsis instead.
+const cleanTitle = (t?: string | null) => t?.replace(/\s*(\.\.\.|…)$/, "…") ?? null;
+// No headline on file: build one from a readable link, like ".../taylor-swift-eras-tour-ticket-sales".
+const titleFromUrl = (u: string) => {
+  const seg = decodeURIComponent(new URL(u).pathname).split("/").filter(Boolean).reverse()
+    .find((p) => /[a-z]/i.test(p) && p.split(/[-_]/).length >= 3);
+  if (!seg) return null;
+  const words = seg.replace(/\.[a-z]+$/i, "").split(/[-_]+/).filter((w) => w && !/^\d+$/.test(w));
+  const t = words.join(" ");
+  return t ? t[0].toUpperCase() + t.slice(1) : null;
+};
 
-const jsonLd = record && {
-  "@context": "https://schema.org",
+const breadcrumbs = record && {
   "@type": "BreadcrumbList",
   itemListElement: [
     { "@type": "ListItem", position: 1, name: "Broken Records", item: "https://brokenrecords.com/" },
@@ -38,6 +59,23 @@ const jsonLd = record && {
     { "@type": "ListItem", name: record.title, item: `https://brokenrecords.com/records/${record.slug}` },
   ].filter(Boolean).map((x, i) => ({ ...(x as object), position: i + 1 })),
 };
+// An Article entry tells search engines what the page is about, who holds the record and where the facts come from.
+const article = record && story && {
+  "@type": "Article",
+  "@id": `${pageUrl}#article`,
+  headline: `${record.title}: ${record.holder}, ${usText}`,
+  description,
+  image: record.poster_url ? [record.poster_url.split("?")[0]] : undefined,
+  dateModified: record.story_at ?? record.updated_at ?? undefined,
+  author: { "@type": "Organization", name: "Broken Records", url: "https://brokenrecords.com/" },
+  publisher: { "@type": "Organization", name: "Broken Records", url: "https://brokenrecords.com/" },
+  mainEntityOfPage: pageUrl,
+  about: { "@type": "Thing", name: record.holder ?? record.title },
+  articleSection: record.categories?.name,
+  wordCount: story.sections.reduce((n, s) => n + s.body.split(" ").length, 0),
+  citation: sources.map((s) => s.url),
+};
+const jsonLd = record && { "@context": "https://schema.org", "@graph": [breadcrumbs, article].filter(Boolean) };
 
 const facts = record
   ? ([
@@ -81,15 +119,33 @@ const facts = record
           {facts.map(([k, val]) => (<div><dt>{k}</dt><dd>{val}</dd></div>))}
         </dl>
 
+        {story && (
+          <section class="story" aria-label="The story">
+            {story.sections.map((sec) => (
+              <>
+                <h2>{sec.heading}</h2>
+                <p>{sec.body}</p>
+              </>
+            ))}
+          </section>
+        )}
+
         <Perspective record={record} />
 
         <section class="sources" aria-labelledby="src">
           <h2 id="src">Sources</h2>
-          <ul>
-            {record.record_sources.map((s) => (
+          <ul class="src-cards">
+            {sources.map((s) => (
               <li>
-                <a href={s.url} rel="noopener" target="_blank">{s.publisher ?? new URL(s.url).hostname}</a>
-                {s.license && <span class="lic"> ({s.license})</span>}
+                <a class="src-card" href={s.url} rel="noopener" target="_blank">
+                  <span class="src-pub">
+                    {(s.publisher ?? new URL(s.url).hostname).replace(/^www\./, "")}
+                    {sourceDate(s.published_on) && <span class="src-date"> · {sourceDate(s.published_on)}</span>}
+                  </span>
+                  <span class="src-title">{cleanTitle(s.title) ?? titleFromUrl(s.url) ?? "Read the source"}</span>
+                  {s.quote && <q class="src-quote">{s.quote}</q>}
+                  {s.license && <span class="lic">{s.license}</span>}
+                </a>
               </li>
             ))}
           </ul>
@@ -133,9 +189,21 @@ const facts = record
   .facts dt { font: 600 0.9rem/1.3 var(--display); color: var(--ink-soft); }
   .facts dd { margin: 0.2rem 0 0; font-size: 1.1rem; }
   .sources, .related { margin-top: 3rem; }
+  .sources .note { margin-top: 1.25rem; }
   .sources h2, .related h2 { margin-bottom: 0.75rem; }
-  .sources ul { margin: 0; padding-left: 1.2rem; }
-  .lic { color: var(--ink-soft); font-size: 0.95rem; }
+  .story { margin-top: 3rem; max-width: 42rem; }
+  .story h2 { font-size: 1.45rem; margin: 2rem 0 0.5rem; }
+  .story h2:first-child { margin-top: 0; }
+  .story p { font-size: 1.15rem; line-height: 1.65; margin: 0; }
+  .src-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); gap: 1rem; }
+  .src-card { display: flex; flex-direction: column; gap: 0.45rem; height: 100%; box-sizing: border-box; padding: 1rem 1.1rem; border: 1px solid var(--rule); border-top: 3px solid var(--amber); border-radius: 4px; color: var(--ink); text-decoration: none; }
+  .src-card:hover, .src-card:focus-visible { border-color: var(--ink); }
+  .src-card:hover .src-title { text-decoration: underline; }
+  .src-pub { font: 600 0.85rem/1.3 var(--display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+  .src-date { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .src-title { font: 700 1.05rem/1.35 var(--display); color: var(--link); overflow-wrap: anywhere; }
+  .src-quote { font-style: italic; color: var(--ink-soft); line-height: 1.5; }
+  .lic { color: var(--ink-soft); font-size: 0.85rem; }
   .note { color: var(--ink-soft); max-width: 60ch; }
   .missing { padding: 4rem 0; }
   .missing p { max-width: 50ch; }

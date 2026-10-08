@@ -4,7 +4,9 @@
 export const SUPABASE_URL = "https://ccwmynoumrqpvnmpcgch.supabase.co";
 export const SUPABASE_KEY = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 
-export type Source = { url: string; publisher: string | null; license: string | null };
+export type Source = { url: string; publisher: string | null; license: string | null; title?: string | null; published_on?: string | null; quote?: string | null };
+/** Original write-up for a record page, made by the record-story job. */
+export type Story = { sections: { heading: string; body: string }[]; quote: { text: string; url: string } | null; conflict?: string | null };
 export type Category = { id: string; slug: string; name: string; parent_id?: string | null; sort_order?: number | null; count?: number };
 /** A top-level section (Sports, Nature and Earth...) with the categories inside it. */
 export type Section = Category & { children: Category[] };
@@ -28,6 +30,8 @@ export type RecordRow = {
   featured: boolean;
   categories: { slug: string; name: string } | null;
   record_sources: Source[];
+  story?: Story | null;
+  story_at?: string | null;
 };
 
 const RECORD_SELECT =
@@ -93,8 +97,10 @@ export async function getRecords(opts: { categoryId?: string; categoryIds?: stri
 }
 
 export async function getRecord(slug: string): Promise<RecordRow | null> {
+  // The record page also needs the story and the source details; card lists don't.
+  const select = RECORD_SELECT.replace("record_sources(url,publisher,license)", "record_sources(url,publisher,license,title,published_on,quote)") + ",story,story_at";
   const rows = await rest<RecordRow[]>(
-    `records?select=${RECORD_SELECT}&slug=eq.${encodeURIComponent(slug)}&status=in.(published,superseded)`,
+    `records?select=${select}&slug=eq.${encodeURIComponent(slug)}&status=in.(published,superseded)`,
   );
   return rows[0] ?? null;
 }
