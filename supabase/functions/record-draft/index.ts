@@ -93,7 +93,14 @@ async function research(sb: SupabaseClient, r: Row) {
     "value_text is the figure as a reader would expect to see it, e.g. '3:42.66', '8,849 m (29,032 ft)', '$2.5 billion', '14 titles'.",
     "Use confidence 'high' only when at least two independent sources agree on the holder and the figure. Never guess. Plain words. No em dashes.",
   ].join(" ");
-  const user = `Topic: ${title}\nCategory: ${r.category_guess ?? "unknown"}\nA ${direction} figure is better.\n\nReturn holder, value_numeric, unit, value_text, achieved_on (YYYY-MM-DD, or null if unknown), location, governing_body, definition, confidence, sources (the URLs you relied on, at most 5), and a one-sentence note.`;
+  // Second pass: show the first answer and ask for it to be confirmed or corrected.
+  const p1 = r.claude_json.pass1 as Record<string, unknown> | undefined;
+  const check = p1
+    ? `\n\nA first search answered: holder "${p1.holder ?? "unknown"}", figure "${p1.value_text ?? "unknown"}", date ${p1.achieved_on ?? "unknown"}. ` +
+      "That answer was not well supported. Check it against at least two independent, authoritative sources. Correct anything that is wrong or out of date. " +
+      "If you cannot find two independent sources that agree, set confidence to 'low'. If the topic has no clear single record, say so in the note and set confidence to 'low'."
+    : "";
+  const user = `Topic: ${title}\nCategory: ${r.category_guess ?? "unknown"}\nA ${direction} figure is better.${check}\n\nReturn holder, value_numeric, unit, value_text, achieved_on (YYYY-MM-DD, or null if unknown), location, governing_body, definition, confidence, sources (the URLs you relied on, at most 5), and a one-sentence note.`;
 
   let res: Response | undefined, text = "";
   for (let attempt = 0; attempt < 3; attempt++) {
