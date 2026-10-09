@@ -1,0 +1,74 @@
+---
+import Base from "../layouts/Base.astro";
+import { getSearchIndex, logSearchMiss, cacheFor } from "../lib/data";
+import { search, tokens } from "../lib/search";
+
+// Full results page. Works without JavaScript and can be shared as a link.
+const q = (Astro.url.searchParams.get("q") ?? "").trim().slice(0, 100);
+const hasQuery = tokens(q).length > 0;
+let results: Awaited<ReturnType<typeof getSearchIndex>> = [];
+let failed = false;
+if (hasQuery) {
+  try {
+    results = search(await getSearchIndex(), q, 100);
+  } catch {
+    failed = true;
+  }
+  // A search that finds nothing tells us which records people want. Store only the words.
+  if (!failed && results.length === 0) await logSearchMiss(q);
+}
+cacheFor(600, Astro.response);
+const title = hasQuery ? `Search: ${q} | Broken Records` : "Search records | Broken Records";
+---
+<Base title={title} description="Search every world record on Broken Records." noindex={true}>
+  <div class="wrap search-page">
+    <h1>{hasQuery ? <>Results for “{q}”</> : "Search records"}</h1>
+
+    <form class="big-search" action="/search" method="get" role="search">
+      <label class="sr-only" for="search-page-q">Search records</label>
+      <input id="search-page-q" name="q" type="search" value={q} placeholder="Try “mile”, “Everest” or “Messi”" />
+      <button type="submit">Search</button>
+    </form>
+
+    {failed && <p class="note">Search is not available right now. Try again in a minute, or browse <a href="/category">all categories</a>.</p>}
+
+    {hasQuery && !failed && (
+      results.length > 0 ? (
+        <>
+          <p class="count">{results.length === 100 ? "Top 100 records" : `${results.length} record${results.length === 1 ? "" : "s"}`}</p>
+          <ol class="results">
+            {results.map((r) => (
+              <li>
+                <a href={`/records/${r.s}`}>
+                  <span class="rt">{r.t}</span>
+                  <span class="rm">{[r.v, r.h].filter(Boolean).join(" · ")}</span>
+                  {r.c && <span class="rc">{r.c}</span>}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : (
+        <div class="none">
+          <p>We don't have a record for “{q}” yet. We've noted the search, and the most-wanted records get added first.</p>
+          <p>Try a shorter search, or browse <a href="/category">all categories</a>.</p>
+        </div>
+      )
+    )}
+  </div>
+</Base>
+
+<style>
+  .search-page { padding-top: 2.5rem; max-width: 52rem; }
+  .big-search { display: flex; gap: 0.5rem; margin: 1.25rem 0 1.5rem; }
+  .big-search input { flex: 1; font: 500 1.1rem/1.2 var(--display); padding: 0.7rem 0.9rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); }
+  .big-search button { font: 700 1rem/1 var(--display); padding: 0 1.2rem; border: 0; border-radius: 4px; background: var(--amber); color: #000; cursor: pointer; }
+  .count { font: 600 0.9rem/1 var(--display); color: var(--ink-soft); margin: 0 0 0.75rem; }
+  .results { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
+  .results a { display: grid; gap: 0.15rem; padding: 0.85rem 0.25rem; border-bottom: 1px solid var(--rule); text-decoration: none; color: inherit; }
+  .results a:hover .rt { text-decoration: underline; }
+  .rt { font: 800 1.15rem/1.2 var(--display); }
+  .rm { font: 500 0.95rem/1.3 var(--display); color: var(--ink); }
+  .rc { font: 600 0.75rem/1.2 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+  .none, .note { font-size: 1.05rem; }
+</style>

@@ -109,6 +109,34 @@ export async function getRecord(slug: string): Promise<RecordRow | null> {
   return rows[0] ?? null;
 }
 
+// Everything the search box needs, for every published record. Short keys keep it small.
+export async function getSearchIndex(): Promise<import("./search").IndexItem[]> {
+  const rows = await rest<{ slug: string; title: string; holder: string | null; value_text: string | null; value_numeric: number | null; unit: string | null; categories: { name: string } | null }[]>(
+    "records?select=slug,title,holder,value_text,value_numeric,unit,categories(name)&status=eq.published&order=title.asc",
+  );
+  return rows.map((r) => ({
+    s: r.slug,
+    t: r.title,
+    h: r.holder ?? "",
+    c: r.categories?.name ?? "",
+    v: r.value_text ?? (r.value_numeric != null ? `${r.value_numeric} ${r.unit ?? ""}`.trim() : ""),
+  }));
+}
+
+// Remember a search that found nothing, so we know which records people want.
+// Only the words typed are stored. Never throws: search must work even if this fails.
+export async function logSearchMiss(q: string): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_search_miss`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ q }),
+    });
+  } catch {
+    // ignore
+  }
+}
+
 // For a history page: the live record that replaced it, so the page can link to it.
 export async function getCurrentRecord(id: string): Promise<{ slug: string; title: string } | null> {
   try {
