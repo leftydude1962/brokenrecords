@@ -95,9 +95,7 @@ Deno.serve(async (req) => {
     return json({ error: "Something went wrong. Try again later." }, 500, origin);
   }
   if (!check.success) {
-    // TEMPORARY debug: shows Cloudflare's reason codes on the page. Remove once the check works.
-    const why = JSON.stringify(check.raw).slice(0, 300);
-    return json({ error: `The check did not pass. Cloudflare said: ${why}` }, 403, origin);
+    return json({ error: "The check did not pass. Refresh the page and try again." }, 403, origin);
   }
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
