@@ -14,7 +14,7 @@
 // superseded history row, the live record is updated, and last_checked_at is set to now.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-const ADMIN_EMAIL = "mohr.keith@gmail.com";
+const ADMIN_EMAIL = "info@mohrcreativegroup.com";
 const ALLOWED_ORIGINS = ["https://brokenrecords.com", "https://www.brokenrecords.com"];
 
 const corsHeaders = (origin: string | null) => ({
