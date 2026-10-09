@@ -1,0 +1,162 @@
+---
+import Base from "../layouts/Base.astro";
+// Private review page for record corrections. Only the owner's account can use it.
+// The server checks the account on every request, so this page is not the only guard.
+const supabaseUrl = "https://ccwmynoumrqpvnmpcgch.supabase.co";
+const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
+---
+
+<Base title="Review corrections | Broken Records" description="Private page." noindex={true}>
+  <main class="admin wrap">
+    <h1>Review corrections</h1>
+
+    <section id="login" hidden>
+      <p>Enter your email. We send a sign-in link.</p>
+      <form id="login-form">
+        <input type="email" id="login-email" required autocomplete="email" placeholder="you@example.com" />
+        <button type="submit">Send sign-in link</button>
+      </form>
+      <p id="login-status" role="status"></p>
+    </section>
+
+    <section id="queue" hidden>
+      <div class="admin-bar">
+        <span id="count"></span>
+        <button type="button" id="signout">Sign out</button>
+      </div>
+      <p id="queue-status" role="status"></p>
+      <ul id="items" class="items"></ul>
+    </section>
+  </main>
+
+  <script is:inline type="module" define:vars={{ supabaseUrl, publishableKey }}>
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
+
+    const sb = createClient(supabaseUrl, publishableKey, { auth: { persistSession: true, detectSessionInUrl: true } });
+    const FN = supabaseUrl + "/functions/v1/admin-review";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    async function call(body) {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sign in first.");
+      const res = await fetch(FN, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, apikey: publishableKey },
+        body: JSON.stringify(body),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "Request failed.");
+      return out;
+    }
+
+    function card(c) {
+      const r = c.records || {};
+      const meta = c.claude_json || {};
+      const src = (c.source_urls || [])[0] || "";
+      return `
+        <li class="item" data-id="${esc(c.id)}">
+          <h2><a href="/records/${esc(r.slug)}" target="_blank" rel="noopener">${esc(r.title)}</a></h2>
+          <p class="now"><strong>Live now:</strong> ${esc(r.holder)} · ${esc(r.value_text)} · ${esc(r.achieved_on || "no date")}</p>
+          <p class="meta">Submitted ${esc(new Date(c.created_at).toLocaleString())}${meta.email ? " · from " + esc(meta.email) : ""}</p>
+          <p class="correction"><strong>Reported:</strong> ${esc(meta.correction || c.proposed_value_text)}</p>
+          <p><strong>Source:</strong> ${src ? `<a href="${esc(src)}" target="_blank" rel="noopener nofollow">${esc(src)}</a>` : "none"}</p>
+          <details open>
+            <summary>Set the new values</summary>
+            <div class="fields">
+              <label>Holder <input data-k="holder" value="${esc(r.holder)}" /></label>
+              <label>Figure (as shown) <input data-k="value_text" value="${esc(r.value_text)}" /></label>
+              <label>Numeric value <input data-k="value_numeric" value="${esc(r.value_numeric)}" inputmode="decimal" /></label>
+              <label>Unit <input data-k="unit" value="${esc(r.unit)}" /></label>
+              <label>Date set (YYYY-MM-DD) <input data-k="achieved_on" value="${esc(r.achieved_on)}" placeholder="2026-10-03" /></label>
+              <label>Location <input data-k="location" value="${esc(r.location)}" /></label>
+            </div>
+          </details>
+          <div class="actions">
+            <button type="button" data-act="approve">Approve and publish</button>
+            <button type="button" data-act="hold">Hold</button>
+            <button type="button" data-act="reject">Reject</button>
+          </div>
+          <p class="row-status" role="status"></p>
+        </li>`;
+    }
+
+    async function loadQueue() {
+      $("queue-status").textContent = "Loading...";
+      try {
+        const { items } = await call({ action: "list" });
+        $("count").textContent = items.length + " waiting";
+        $("items").innerHTML = items.map(card).join("") || "<li>Nothing waiting. Good.</li>";
+        $("queue-status").textContent = "";
+      } catch (e) {
+        $("queue-status").textContent = e.message;
+      }
+    }
+
+    function showFor(session) {
+      $("login").hidden = !!session;
+      $("queue").hidden = !session;
+      if (session) loadQueue();
+    }
+
+    $("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("login-status").textContent = "Sending...";
+      const { error } = await sb.auth.signInWithOtp({ email: $("login-email").value.trim(), options: { shouldCreateUser: false } });
+      $("login-status").textContent = error ? error.message : "Check your email for the sign-in link.";
+    });
+
+    $("signout").addEventListener("click", async () => {
+      await sb.auth.signOut();
+      location.reload();
+    });
+
+    $("items").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const li = btn.closest(".item");
+      const act = btn.dataset.act;
+      const status = li.querySelector(".row-status");
+      const buttons = li.querySelectorAll("button");
+      if (act === "reject" && !confirm("Reject this report? It will be closed without changes.")) return;
+      buttons.forEach((b) => (b.disabled = true));
+      status.textContent = "Working...";
+      const fields = {};
+      li.querySelectorAll("[data-k]").forEach((i) => (fields[i.dataset.k] = i.value.trim()));
+      try {
+        const body = act === "approve"
+          ? { action: "approve", candidate_id: li.dataset.id, fields }
+          : { action: act, candidate_id: li.dataset.id };
+        await call(body);
+        li.remove();
+        const left = $("items").querySelectorAll(".item").length;
+        $("count").textContent = left + " waiting";
+      } catch (err) {
+        status.textContent = err.message;
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    });
+
+    const { data } = await sb.auth.getSession();
+    showFor(data.session);
+    sb.auth.onAuthStateChange((_evt, session) => showFor(session));
+  </script>
+
+  <style>
+    .admin { padding-top: 2rem; padding-bottom: 3rem; max-width: 52rem; }
+    .admin input { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid #bbb; border-radius: 6px; width: 100%; box-sizing: border-box; }
+    .admin button { font: inherit; padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid #888; cursor: pointer; margin-right: 0.4rem; }
+    .admin button:disabled { opacity: 0.5; cursor: default; }
+    .admin-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .items { list-style: none; padding: 0; display: grid; gap: 1.2rem; }
+    .item { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
+    .item h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+    .meta, .now, .correction { margin: 0.3rem 0; }
+    .fields { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin: 0.6rem 0; }
+    .fields label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+    .actions { margin-top: 0.6rem; }
+    .row-status { color: #a33; margin: 0.4rem 0 0; }
+    #login-form { display: grid; gap: 0.6rem; max-width: 26rem; }
+  </style>
+</Base>
