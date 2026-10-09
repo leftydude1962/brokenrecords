@@ -7,7 +7,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 ---
 
 <Base title="Review corrections | Broken Records" description="Private page." noindex={true}>
-  <main class="admin wrap">
+  <div class="admin wrap">
     <h1>Review corrections</h1>
 
     <section id="login" hidden>
@@ -27,7 +27,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       <p id="queue-status" role="status"></p>
       <ul id="items" class="items"></ul>
     </section>
-  </main>
+  </div>
 
   <script is:inline type="module" define:vars={{ supabaseUrl, publishableKey }}>
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
