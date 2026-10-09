@@ -34,6 +34,8 @@ export type RecordRow = {
   record_sources: Source[];
   story?: Story | null;
   story_at?: string | null;
+  /** On a history (superseded) row: the id of the live record that replaced it. */
+  superseded_by?: string | null;
 };
 
 const RECORD_SELECT =
@@ -100,11 +102,23 @@ export async function getRecords(opts: { categoryId?: string; categoryIds?: stri
 
 export async function getRecord(slug: string): Promise<RecordRow | null> {
   // The record page also needs the story and the source details; card lists don't.
-  const select = RECORD_SELECT.replace("record_sources(url,publisher,license)", "record_sources(url,publisher,license,title,published_on,quote)") + ",story,story_at";
+  const select = RECORD_SELECT.replace("record_sources(url,publisher,license)", "record_sources(url,publisher,license,title,published_on,quote)") + ",story,story_at,superseded_by";
   const rows = await rest<RecordRow[]>(
     `records?select=${select}&slug=eq.${encodeURIComponent(slug)}&status=in.(published,superseded)`,
   );
   return rows[0] ?? null;
+}
+
+// For a history page: the live record that replaced it, so the page can link to it.
+export async function getCurrentRecord(id: string): Promise<{ slug: string; title: string } | null> {
+  try {
+    const rows = await rest<{ slug: string; title: string }[]>(
+      `records?select=slug,title&id=eq.${encodeURIComponent(id)}&status=eq.published`,
+    );
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // US display. This is the main value on every page. The database stays metric because sources publish

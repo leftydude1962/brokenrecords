@@ -149,6 +149,7 @@ async function approve(sb: SupabaseClient, id: string, rawFields: unknown, revie
     governing_body: rec.governing_body,
     wikidata_id: rec.wikidata_id,
     status: "superseded",
+    superseded_by: rec.id,
     last_verified_at: rec.last_verified_at,
     featured: false,
   });

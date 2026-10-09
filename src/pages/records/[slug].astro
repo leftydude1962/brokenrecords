@@ -4,12 +4,14 @@ import Stat from "../../components/Stat.astro";
 import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
 import CorrectionForm from "../../components/CorrectionForm.astro";
-import { getRecord, getRecords, getTaxonomy, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
+import { getRecord, getRecords, getTaxonomy, getCurrentRecord, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
 if (!record) {
   Astro.response.status = 404;
 }
+// On a history page, find the live record that replaced it so we can link to it.
+const current = record?.status === "superseded" && record.superseded_by ? await getCurrentRecord(record.superseded_by) : null;
 let related: Awaited<ReturnType<typeof getRecords>> = [];
 const { sectionOf, categories } = await getTaxonomy();
 const section = record?.categories ? sectionOf[record.categories.slug] ?? null : null;
@@ -128,7 +130,12 @@ const facts = record
           </nav>
           <h1 class="rec-h1">{record.title}</h1>
           {quick && <p class="quick-answer">{quick}</p>}
-          {record.status === "superseded" && <p class="flag">This record has been broken. It is kept here for history.</p>}
+          {record.status === "superseded" && (
+            <p class="flag">
+              This record has been broken. It is kept here for history.
+              {current && <> <a href={`/records/${current.slug}`}>See the current record &rarr;</a></>}
+            </p>
+          )}
           <Stat record={record} />
           </div>
           {record.poster_url && (

@@ -228,6 +228,7 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
     slug: histSlug, category_id: rec.category_id, title: `${rec.title} (${oldYear})`, holder: rec.holder,
     value_numeric: rec.value_numeric, value_text: rec.value_text, unit: rec.unit, better_direction: rec.better_direction,
     achieved_on: rec.achieved_on, location: rec.location, governing_body: rec.governing_body, status: "superseded",
+    superseded_by: rec.id,
   }).select("id").single();
   if (hErr) return { ...summary, status: "error", error: hErr.message };
   if (oldSources?.length) await sb.from("record_sources").insert(oldSources.map((s) => ({ ...s, record_id: hist.id })));
