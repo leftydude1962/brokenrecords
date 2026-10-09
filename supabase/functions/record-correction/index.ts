@@ -40,6 +40,20 @@ const isHttpUrl = (u: string) => {
   }
 };
 
+// Checks the Turnstile token with Cloudflare. Returns true only when Cloudflare says it is valid.
+// Secret: TURNSTILE_SECRET_KEY (set in Supabase, never in the site code).
+async function verifyTurnstile(token: string, clientIp: string): Promise<boolean> {
+  const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
+  if (!secret) throw new Error("TURNSTILE_SECRET_KEY is not set");
+  const form = new FormData();
+  form.append("secret", secret);
+  form.append("response", token);
+  if (clientIp !== "unknown") form.append("remoteip", clientIp);
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+  const out = await res.json().catch(() => ({ success: false }));
+  return out.success === true;
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -68,6 +82,18 @@ Deno.serve(async (req) => {
   if (email && (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
     return json({ error: "That email address does not look right." }, 400, origin);
   }
+
+  // Bot check. Runs before any database work, so bots cost us nothing.
+  const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
+  if (!turnstileToken) return json({ error: "Please complete the check and try again." }, 400, origin);
+  const clientIp = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  let humanOk = false;
+  try {
+    humanOk = await verifyTurnstile(turnstileToken, clientIp);
+  } catch {
+    return json({ error: "Something went wrong. Try again later." }, 500, origin);
+  }
+  if (!humanOk) return json({ error: "The check did not pass. Refresh the page and try again." }, 403, origin);
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false },

@@ -3,6 +3,8 @@
 // Submissions go to the review queue. They never change the live record.
 const { slug } = Astro.props as { slug: string };
 const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-correction";
+// Turnstile site key. This value is public by design. The secret key lives only in Supabase.
+const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
 ---
 
 <details class="correct">
@@ -24,10 +26,13 @@ const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-c
       <span>Leave this field empty</span>
       <input type="text" name="website" tabindex="-1" autocomplete="off" />
     </label>
+    <div class="cf-turnstile" data-sitekey={turnstileSiteKey}></div>
     <button type="submit">Send correction</button>
     <p class="correct-status" role="status" aria-live="polite"></p>
   </form>
 </details>
+
+<script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
 <script>
   document.querySelectorAll<HTMLFormElement>(".correct-form").forEach((form) => {
@@ -42,7 +47,12 @@ const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-c
         source_url: String(fd.get("source_url") ?? ""),
         email: String(fd.get("email") ?? ""),
         website: String(fd.get("website") ?? ""),
+        turnstile_token: String(fd.get("cf-turnstile-response") ?? ""),
       };
+      if (!payload.turnstile_token) {
+        status.textContent = "Please wait for the check to finish, then send again.";
+        return;
+      }
       button.disabled = true;
       status.textContent = "Sending...";
       try {
@@ -54,9 +64,11 @@ const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-c
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           form.reset();
+          (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
           status.textContent = "Thanks. We review every report against its source before we change a record.";
         } else {
           status.textContent = data.error ?? "Something went wrong. Email info@brokenrecords.com instead.";
+          (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
           button.disabled = false;
         }
       } catch {
