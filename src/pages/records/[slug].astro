@@ -3,6 +3,7 @@ import Base from "../../layouts/Base.astro";
 import Stat from "../../components/Stat.astro";
 import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
+import CorrectionForm from "../../components/CorrectionForm.astro";
 import { getRecord, getRecords, getTaxonomy, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
@@ -175,6 +176,7 @@ const facts = record
             ))}
           </ul>
           <p class="note">Spotted an error or a newer record? Email <a href="mailto:info@brokenrecords.com">info@brokenrecords.com</a> with a source link.</p>
+          <CorrectionForm slug={record.slug} />
         </section>
 
         {related.length > 0 && record.categories && (

@@ -1,0 +1,84 @@
+---
+// "Spotted something out of date?" form on each record page.
+// Submissions go to the review queue. They never change the live record.
+const { slug } = Astro.props as { slug: string };
+const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-correction";
+---
+
+<details class="correct">
+  <summary>Spotted something out of date?</summary>
+  <form class="correct-form" data-endpoint={endpoint} data-slug={slug}>
+    <label>
+      <span>What is wrong or has changed?</span>
+      <textarea name="correction" required minlength="10" maxlength="1000" rows="4"></textarea>
+    </label>
+    <label>
+      <span>Link to a source that shows the correct information</span>
+      <input type="url" name="source_url" required maxlength="500" placeholder="https://" />
+    </label>
+    <label>
+      <span>Email (optional, only used to follow up on this report)</span>
+      <input type="email" name="email" maxlength="200" autocomplete="email" />
+    </label>
+    <label class="hp" aria-hidden="true">
+      <span>Leave this field empty</span>
+      <input type="text" name="website" tabindex="-1" autocomplete="off" />
+    </label>
+    <button type="submit">Send correction</button>
+    <p class="correct-status" role="status" aria-live="polite"></p>
+  </form>
+</details>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>(".correct-form").forEach((form) => {
+    const status = form.querySelector<HTMLParagraphElement>(".correct-status")!;
+    const button = form.querySelector<HTMLButtonElement>("button")!;
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const payload = {
+        slug: form.dataset.slug,
+        correction: String(fd.get("correction") ?? ""),
+        source_url: String(fd.get("source_url") ?? ""),
+        email: String(fd.get("email") ?? ""),
+        website: String(fd.get("website") ?? ""),
+      };
+      button.disabled = true;
+      status.textContent = "Sending...";
+      try {
+        const res = await fetch(form.dataset.endpoint!, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          form.reset();
+          status.textContent = "Thanks. We review every report against its source before we change a record.";
+        } else {
+          status.textContent = data.error ?? "Something went wrong. Email info@brokenrecords.com instead.";
+          button.disabled = false;
+        }
+      } catch {
+        status.textContent = "Could not reach the server. Try again, or email info@brokenrecords.com.";
+        button.disabled = false;
+      }
+    });
+  });
+</script>
+
+<style>
+  .correct { margin: 1.5rem 0; }
+  .correct summary { cursor: pointer; font-weight: 700; color: var(--link); }
+  .correct-form { display: grid; gap: 0.9rem; margin-top: 0.9rem; max-width: 36rem; }
+  .correct-form label { display: grid; gap: 0.35rem; font-size: 0.95rem; }
+  .correct-form input, .correct-form textarea {
+    font: inherit; padding: 0.6rem 0.7rem; border: 1px solid var(--line, #ccc); border-radius: 6px; width: 100%; box-sizing: border-box;
+  }
+  .correct-form button {
+    justify-self: start; font: inherit; font-weight: 700; padding: 0.6rem 1.1rem; border: 0; border-radius: 6px; cursor: pointer;
+  }
+  .correct-form button:disabled { opacity: 0.6; cursor: default; }
+  .correct-status { margin: 0; min-height: 1.2em; font-size: 0.95rem; }
+  .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+</style>
