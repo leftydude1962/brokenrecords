@@ -32,7 +32,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
       <li class="card" data-cat={r.categories?.slug} style={`--h:${hue(r.categories?.slug ?? r.slug)}`}>
         <a href={href} class="card-link">
           {r.poster_url ? (
-            <img class="media" src={r.poster_url} alt="" loading={i < 4 ? "eager" : "lazy"} decoding="async" width="576" height="1024" />
+            <img class="media" src={r.poster_url} alt={`Illustration for the world record: ${r.title}`} loading={i < 4 ? "eager" : "lazy"} decoding="async" width="576" height="1024" />
           ) : (
             <span class="media fallback" aria-hidden="true"></span>
           )}

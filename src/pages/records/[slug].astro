@@ -23,7 +23,21 @@ const v = record ? formatValue(record) : null;
 const mv = record ? formatMetric(record) : null;
 const usText = v ? `${v.value}${v.unit ? " " + v.unit : ""}` : "";
 const metricText = mv ? `${mv.value}${mv.unit ? " " + mv.unit : ""}` : "";
-const title = record ? `${record.title}: ${record.holder}, ${usText} | Broken Records` : "Record not found | Broken Records";
+// Search engines cut titles around 70 characters. Use the longest version that fits, and keep the brand.
+const BRAND = " | Broken Records";
+const TITLE_MAX = 70;
+const titleFor = (rec: { title: string; holder: string | null }) => {
+  const options = [
+    `${rec.title}: ${rec.holder}, ${usText}${BRAND}`,
+    `${rec.title}: ${rec.holder}${BRAND}`,
+  ];
+  const fit = options.find((o) => o.length <= TITLE_MAX);
+  if (fit) return fit;
+  const room = TITLE_MAX - BRAND.length;
+  const core = rec.title.length <= room ? rec.title : rec.title.slice(0, room - 1).replace(/\s+\S*$/, "") + "…";
+  return core + BRAND;
+};
+const title = record ? titleFor(record) : "Record not found | Broken Records";
 // A story the fact checker flagged (story.issues) stays hidden until it is fixed.
 const story = record?.story?.sections?.length && !record.story.issues?.length ? record.story : null;
 // Search snippet: the story's first sentence when there is one, cut at a word near 155 characters.
@@ -118,7 +132,7 @@ const facts = record
           </div>
           {record.poster_url && (
             <figure class="rec-media" aria-hidden="true">
-              <img src={record.poster_url} alt="" width="576" height="1024" />
+              <img src={record.poster_url} alt={`Illustration for the world record: ${record.title}`} width="576" height="1024" />
               {record.video_url && <video src={record.video_url} poster={record.poster_url} muted loop playsinline autoplay preload="metadata" tabindex="-1"></video>}
             </figure>
           )}
