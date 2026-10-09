@@ -1,0 +1,15 @@
+---
+import Base from "../layouts/Base.astro";
+import LatestRecords from "../components/LatestRecords.astro";
+import { getLatest } from "../lib/latest";
+import { cacheFor } from "../lib/data";
+
+const items = await getLatest(48);
+cacheFor(3600, Astro.response);
+---
+<Base title="Latest world records | Broken Records" description="World records broken or newly set in the last month, checked daily with sources.">
+  <div class="wrap">
+    <LatestRecords items={items} heading="Latest records" showAllLink={false} />
+    {items.length === 0 && <p>Nothing new in the last 30 days. Check back tomorrow.</p>}
+  </div>
+</Base>

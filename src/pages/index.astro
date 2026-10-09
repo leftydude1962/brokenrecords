@@ -1,9 +1,11 @@
 ---
 import Base from "../layouts/Base.astro";
 import RecordCards from "../components/RecordCards.astro";
+import LatestRecords from "../components/LatestRecords.astro";
 import { getTaxonomy, getRecords, cacheFor, type RecordRow } from "../lib/data";
+import { getLatest } from "../lib/latest";
 
-const [{ sections, sectionOf }, records] = await Promise.all([getTaxonomy(), getRecords()]);
+const [{ sections, sectionOf }, records, latest] = await Promise.all([getTaxonomy(), getRecords(), getLatest(8)]);
 
 // One card per section. The section's featured record (the one with a clip) leads; if a section
 // has none, its first record with an image stands in, then any record.
@@ -35,6 +37,10 @@ const jsonLd = {
       <RecordCards records={featured} layout="five" sectionOf={sectionOf} />
     </div>
   </section>
+
+  <div class="wrap">
+    <LatestRecords items={latest} />
+  </div>
 
   <div class="wrap">
     <section class="block" aria-labelledby="cats">

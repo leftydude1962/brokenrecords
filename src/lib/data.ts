@@ -39,7 +39,7 @@ export type RecordRow = {
 const RECORD_SELECT =
   "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,status,last_verified_at,last_checked_at,updated_at,poster_url,video_url,featured,categories(slug,name),record_sources(url,publisher,license)";
 
-async function rest<T>(path: string): Promise<T> {
+export async function rest<T>(path: string): Promise<T> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
   });

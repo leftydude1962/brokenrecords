@@ -1,0 +1,123 @@
+---
+import type { LatestItem } from "../lib/latest";
+
+interface Props {
+  items: LatestItem[];
+  heading?: string;
+  showAllLink?: boolean;
+}
+const { items, heading = "Just broken", showAllLink = true } = Astro.props;
+
+const broken = items.filter((i) => i.is_broken);
+const fresh = items.filter((i) => !i.is_broken);
+
+const fmtDate = (d: string | null, opts: Intl.DateTimeFormatOptions) =>
+  d ? new Date(d + (d.length === 10 ? "T12:00:00Z" : "")).toLocaleDateString("en-US", { timeZone: "UTC", ...opts }) : "";
+const year = (d: string | null) => (d ? d.slice(0, 4) : "");
+const stood = (oldOn: string | null, newOn: string | null) => {
+  if (!oldOn || !newOn) return null;
+  const yrs = Math.floor((Date.parse(newOn) - Date.parse(oldOn)) / 31557600000);
+  return yrs >= 2 ? `Stood ${yrs} years` : null;
+};
+const latestChange = items.reduce((m, i) => (i.changed_at > m ? i.changed_at : m), "");
+---
+{items.length > 0 && (
+<section class="latest" aria-labelledby="latest-h">
+  <div class="latest-head">
+    <h2 id="latest-h">{heading}</h2>
+    <span class="meta">
+      Checked daily{latestChange && <> · Updated {fmtDate(latestChange.slice(0, 10), { month: "short", day: "numeric" })}</>}
+      {showAllLink && <> · <a href="/latest">See all latest records &rarr;</a></>}
+    </span>
+  </div>
+
+  {broken.length > 0 && (
+    <div class="broken-row">
+      {broken.map((r) => (
+        <a class="bcard" href={`/records/${r.slug}`}>
+          <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+          <div class="bbody">
+            <span><span class="label broken">Record broken</span></span>
+            <h3>{r.title}</h3>
+            <div class="flap">
+              <div class="old">
+                <span class="tag">{stood(r.old_achieved_on, r.achieved_on) ?? "Previous"}</span>
+                <span class="val">{r.old_value}</span>
+                <span class="who">{r.old_holder}{r.old_achieved_on && ` · ${year(r.old_achieved_on)}`}</span>
+              </div>
+              <div class="now">
+                <span class="tag">New record</span>
+                <span class="val">{r.display_value}</span>
+                <span class="who">{r.holder}{r.achieved_on && ` · ${fmtDate(r.achieved_on, { month: "short", day: "numeric", year: "numeric" })}`}</span>
+              </div>
+            </div>
+            {r.category_name && <span class="bfoot">{r.category_name}</span>}
+          </div>
+        </a>
+      ))}
+    </div>
+  )}
+
+  {fresh.length > 0 && (
+    <div class="new-row">
+      {fresh.map((r) => (
+        <a class="ncard" href={`/records/${r.slug}`}>
+          <span class="label new">New</span>
+          <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+          <div class="nbody">
+            <h3>{r.title}</h3>
+            <span class="val">{r.display_value}</span>
+            <span class="who">{r.holder}</span>
+            {r.achieved_on && <span class="when">{fmtDate(r.achieved_on, { month: "short", day: "numeric" })}</span>}
+          </div>
+        </a>
+      ))}
+    </div>
+  )}
+</section>
+)}
+
+<style>
+  .latest{padding:2.5rem 0 3rem}
+  .latest-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem 1.5rem;border-bottom:2px solid var(--ink);padding-bottom:.6rem;margin-bottom:1.5rem}
+  .latest-head h2{font-weight:850;font-stretch:112%;font-size:clamp(1.6rem,1.2rem + 1.6vw,2.4rem);letter-spacing:-.01em}
+  .latest-head .meta{font:500 .85rem/1.3 var(--display);color:var(--ink-soft)}
+  .latest-head .meta a{font-weight:700}
+
+  .label{display:inline-block;font:800 .7rem/1 var(--display);letter-spacing:.12em;text-transform:uppercase;padding:.35rem .5rem;border-radius:2px}
+  .label.broken{background:var(--red);color:#fff}
+  .label.new{background:var(--amber);color:#000}
+
+  .poster{background:var(--board) center/cover no-repeat;aspect-ratio:4/5}
+
+  .broken-row{display:grid;gap:1.25rem;grid-template-columns:1fr}
+  @media(min-width:56rem){.broken-row{grid-template-columns:repeat(auto-fit,minmax(26rem,1fr))}}
+  .bcard{display:grid;grid-template-columns:1fr;background:var(--paper);border:1px solid var(--rule);border-top:5px solid var(--red);text-decoration:none;color:inherit;overflow:hidden}
+  .bcard .poster{aspect-ratio:16/9}
+  @media(min-width:36rem){.bcard{grid-template-columns:42% 1fr}.bcard .poster{aspect-ratio:auto;min-height:12rem}}
+  .bbody{padding:1.1rem 1.25rem 1.25rem;display:flex;flex-direction:column;gap:.7rem}
+  .bbody h3{font-weight:800;font-size:1.45rem}
+  .flap{display:grid;gap:.5rem}
+  .flap>div{display:grid;grid-template-columns:auto 1fr;column-gap:1rem;align-items:end;color:#fff;padding:.5rem .75rem .6rem;border-radius:3px;background:var(--flap) linear-gradient(to bottom,transparent calc(50% - .5px),rgba(0,0,0,.35) calc(50% - .5px),rgba(0,0,0,.35) calc(50% + .5px),transparent calc(50% + .5px))}
+  .flap .now{background-color:var(--night)}
+  .tag{grid-column:1/-1;font:700 .66rem/1 var(--display);letter-spacing:.1em;text-transform:uppercase;color:#8a97a3;margin-bottom:.35rem}
+  .flap .now .tag{color:var(--amber)}
+  .flap .val{font:800 1.35rem/1.1 var(--display);font-stretch:110%;font-variant-numeric:tabular-nums}
+  .flap .who{font:500 .85rem/1.25 var(--display);color:#c9d3dc;text-align:right}
+  .flap .old{opacity:.7}
+  .flap .old .val{text-decoration:line-through;text-decoration-color:var(--red);text-decoration-thickness:3px;color:#c9d3dc}
+  .flap .now .val{color:var(--amber)}
+  .bfoot{font:500 .82rem/1.35 var(--display);color:var(--ink-soft);margin-top:auto}
+
+  .new-row{display:grid;gap:1rem;margin-top:1.5rem;grid-template-columns:repeat(2,1fr)}
+  @media(min-width:48rem){.new-row{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:80rem){.new-row{grid-template-columns:repeat(6,1fr)}}
+  .ncard{border:1px solid var(--rule);text-decoration:none;color:inherit;display:flex;flex-direction:column;position:relative}
+  .ncard .label{position:absolute;top:.5rem;left:.5rem}
+  .nbody{padding:.7rem .75rem .8rem;display:flex;flex-direction:column;gap:.3rem;flex:1}
+  .nbody h3{font-weight:750;font-size:.98rem;line-height:1.2}
+  .nbody .val{font:800 1.05rem/1.15 var(--display);font-stretch:108%}
+  .nbody .who{font:500 .8rem/1.3 var(--display);color:var(--ink-soft);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .nbody .when{font:600 .72rem/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-top:auto;padding-top:.35rem}
+  a.bcard:hover h3,a.ncard:hover h3{text-decoration:underline;text-underline-offset:.15em}
+</style>
