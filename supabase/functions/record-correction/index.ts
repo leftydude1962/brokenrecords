@@ -42,7 +42,7 @@ const isHttpUrl = (u: string) => {
 
 // Checks the Turnstile token with Cloudflare. Returns true only when Cloudflare says it is valid.
 // Secret: TURNSTILE_SECRET_KEY (set in Supabase, never in the site code).
-async function verifyTurnstile(token: string, clientIp: string): Promise<boolean> {
+async function verifyTurnstile(token: string, clientIp: string): Promise<{ success: boolean; codes: string[]; raw: unknown }> {
   const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
   if (!secret) throw new Error("TURNSTILE_SECRET_KEY is not set");
   const form = new FormData();
@@ -50,8 +50,9 @@ async function verifyTurnstile(token: string, clientIp: string): Promise<boolean
   form.append("response", token);
   if (clientIp !== "unknown") form.append("remoteip", clientIp);
   const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
-  const out = await res.json().catch(() => ({ success: false }));
-  return out.success === true;
+  const out = await res.json().catch(() => ({ success: false, "error-codes": ["bad-response"] }));
+  // error-codes are Cloudflare's reasons (for example "invalid-input-secret"). They are not secrets.
+  return { success: out.success === true, codes: out["error-codes"] ?? [], raw: out };
 }
 
 Deno.serve(async (req) => {
@@ -87,13 +88,17 @@ Deno.serve(async (req) => {
   const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
   if (!turnstileToken) return json({ error: "Please complete the check and try again." }, 400, origin);
   const clientIp = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-  let humanOk = false;
+  let check: { success: boolean; codes: string[]; raw: unknown };
   try {
-    humanOk = await verifyTurnstile(turnstileToken, clientIp);
+    check = await verifyTurnstile(turnstileToken, clientIp);
   } catch {
     return json({ error: "Something went wrong. Try again later." }, 500, origin);
   }
-  if (!humanOk) return json({ error: "The check did not pass. Refresh the page and try again." }, 403, origin);
+  if (!check.success) {
+    // TEMPORARY debug: shows Cloudflare's reason codes on the page. Remove once the check works.
+    const why = JSON.stringify(check.raw).slice(0, 300);
+    return json({ error: `The check did not pass. Cloudflare said: ${why}` }, 403, origin);
+  }
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false },
