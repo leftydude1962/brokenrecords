@@ -103,7 +103,10 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     $("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       $("login-status").textContent = "Sending...";
-      const { error } = await sb.auth.signInWithOtp({ email: $("login-email").value.trim(), options: { shouldCreateUser: false } });
+      const { error } = await sb.auth.signInWithOtp({
+        email: $("login-email").value.trim(),
+        options: { shouldCreateUser: false, emailRedirectTo: location.origin + "/admin" },
+      });
       $("login-status").textContent = error ? error.message : "Check your email for the sign-in link.";
     });
 
