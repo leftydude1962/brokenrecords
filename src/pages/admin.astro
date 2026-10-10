@@ -23,6 +23,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       <div class="admin-bar">
         <nav class="tabs" aria-label="Admin sections">
           <button type="button" class="tab" data-tab="dash" aria-pressed="true">Today</button>
+          <button type="button" class="tab" data-tab="review" aria-pressed="false">Review <span id="review-count"></span></button>
           <button type="button" class="tab" data-tab="tips" aria-pressed="false">Tips <span id="tip-count"></span></button>
           <button type="button" class="tab" data-tab="queue" aria-pressed="false">Corrections <span id="count"></span></button>
         </nav>
@@ -35,11 +36,11 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           <p class="runline" id="runline"></p>
 
           <div class="tiles">
-            <div class="tile"><span class="n" id="t-new"></span><span class="l">New records found today</span></div>
-            <div class="tile"><span class="n" id="t-broken"></span><span class="l">Records broken today</span></div>
-            <div class="tile"><span class="n" id="t-live"></span><span class="l">Live records</span></div>
-            <div class="tile"><span class="n" id="t-wait"></span><span class="l">Waiting for review</span></div>
-            <div class="tile"><span class="n" id="t-subs"></span><span class="l">Email subscribers</span></div>
+            <button type="button" class="tile" data-go="dash:finds"><span class="n" id="t-new"></span><span class="l">New records found today</span></button>
+            <button type="button" class="tile" data-go="dash:finds"><span class="n" id="t-broken"></span><span class="l">Records broken today</span></button>
+            <a class="tile" href="/latest" target="_blank" rel="noopener"><span class="n" id="t-live"></span><span class="l">Live records</span></a>
+            <button type="button" class="tile hot" data-go="review:review"><span class="n" id="t-wait"></span><span class="l">Waiting for review ›</span></button>
+            <button type="button" class="tile" data-go="dash:audience-h"><span class="n" id="t-subs"></span><span class="l">Email subscribers</span></button>
           </div>
 
           <h2>Found today by the news check</h2>
@@ -56,7 +57,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
             </table>
           </details>
 
-          <h2>Audience</h2>
+          <h2 id="audience-h">Audience</h2>
           <div class="cols">
             <ul class="kv" id="audience"></ul>
             <div>
@@ -69,6 +70,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           <div class="cols">
             <div>
               <h2>Waiting for you</h2>
+              <p class="hint">Click a row to open it.</p>
               <ul class="kv" id="queues"></ul>
             </div>
             <div>
@@ -81,6 +83,13 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           <p class="hint">What visitors looked for and did not find. Good candidates for new records.</p>
           <ul class="kv" id="misses"></ul>
         </div>
+      </section>
+
+      <section id="review" hidden>
+        <p class="hint">Everything the robots found that needs your yes or no. Apply uses the values in the boxes, so fix anything wrong first. Each section has an "Apply all" button for when you trust the batch.</p>
+        <nav class="jump" id="review-jump" aria-label="Review sections"></nav>
+        <p id="review-status" role="status"></p>
+        <div id="review-body"></div>
       </section>
 
       <section id="tips" hidden>
@@ -164,7 +173,12 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     const fmtDay = (d, opts) => new Date(d + "T12:00:00").toLocaleDateString(undefined, opts);
     const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
     const money = (n) => "$" + Number(n || 0).toFixed(2);
-    const kv = (rows) => rows.map(([k, v, warn]) => `<li${warn ? ' class="warn"' : ""}><span>${k}</span><strong>${v}</strong></li>`).join("");
+    // Rows: [label, value, warn?, go?]. A row with "go" becomes a link to that tab and section.
+    const kv = (rows) => rows.map(([k, v, warn, go]) => {
+      const cls = [warn ? "warn" : "", go ? "go" : ""].filter(Boolean).join(" ");
+      const inner = `<span>${k}</span><strong>${v}${go ? " ›" : ""}</strong>`;
+      return `<li${cls ? ` class="${cls}"` : ""}>${go ? `<button type="button" class="rowlink" data-go="${go}">${inner}</button>` : inner}</li>`;
+    }).join("");
 
     // What happened to each claim the news check found today.
     function findState(f) {
@@ -231,12 +245,12 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           `<td>${x.news_live}</td><td>${x.added}</td><td>${x.broken}</td><td>${money(x.cost)}</td></tr>`).join("");
 
         $("queues").innerHTML = kv([
-          ["Tips from visitors", q.tips ?? 0, (q.tips ?? 0) > 0],
-          ["Corrections from visitors", q.corrections, q.corrections > 0],
-          ["News finds held for review", q.news, q.news > 0],
-          ["Recheck: possible new record holders", q.recheck_breaks, q.recheck_breaks > 0],
-          ["Recheck: updated figures, same holder", q.recheck_figures, q.recheck_figures > 0],
-          ["Researched drafts not published", q.drafts],
+          ["Recheck: possible new record holders", q.recheck_breaks, q.recheck_breaks > 0, "review:rv-breaks"],
+          ["Recheck: updated figures, same holder", q.recheck_figures, q.recheck_figures > 0, "review:rv-figures"],
+          ["News finds held for review", q.news, q.news > 0, "review:rv-news"],
+          ["Researched drafts not published", q.drafts, false, "review:rv-drafts"],
+          ["Tips from visitors", q.tips ?? 0, (q.tips ?? 0) > 0, "tips:tips"],
+          ["Corrections from visitors", q.corrections, q.corrections > 0, "queue:queue"],
         ]);
         $("health").innerHTML = kv([
           ["Categories with records", t.categories],
@@ -377,11 +391,218 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 
     function showTab(name) {
       document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === name)));
-      $("dash").hidden = name !== "dash";
-      $("tips").hidden = name !== "tips";
-      $("queue").hidden = name !== "queue";
+      for (const t of ["dash", "review", "tips", "queue"]) $(t).hidden = name !== t;
     }
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+    // Anything with data-go="tab:elementId" opens that tab and scrolls to that element.
+    document.addEventListener("click", (e) => {
+      const el = e.target.closest("[data-go]");
+      if (!el) return;
+      const [tab, target] = el.dataset.go.split(":");
+      showTab(tab);
+      const dest = target && $(target);
+      if (dest) {
+        if (dest.tagName === "DETAILS") dest.open = true;
+        requestAnimationFrame(() => dest.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }
+    });
+
+    // ---------- Review: recheck results, held news finds, researched drafts ----------
+    let reviewCats = [];
+    const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+    // "9 hours 55 minutes 43 seconds" -> 35743 when the unit is seconds; "626.01 m" -> 626.01.
+    function guessNumber(text, unit) {
+      const t = String(text || "").toLowerCase().replace(/,/g, "");
+      if (unit === "s") {
+        const clock = t.match(/^(\d+):(\d{2})(?::(\d{2}(?:\.\d+)?))?/);
+        if (clock) return clock[3] != null ? +clock[1] * 3600 + +clock[2] * 60 + +clock[3] : +clock[1] * 60 + +clock[2];
+        const part = (re) => Number(t.match(re)?.[1] || 0);
+        const h = part(/([\d.]+)\s*(?:h|hours?|hrs?)\b/), m = part(/([\d.]+)\s*(?:m|min|minutes?)\b/), s = part(/([\d.]+)\s*(?:s|sec|seconds?)\b/);
+        if (h || m || s) return Math.round((h * 3600 + m * 60 + s) * 100) / 100;
+      }
+      const n = t.match(/-?\d+(?:\.\d+)?/);
+      return n ? Number(n[0]) : "";
+    }
+
+    // Finds a date like "28 May 2026", "May 28, 2026" or "2026-05-28" in a note.
+    function guessDate(text) {
+      const t = String(text || "").toLowerCase();
+      const iso = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+      if (iso) return iso[0];
+      const pad = (n) => String(n).padStart(2, "0");
+      let m = t.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/);
+      if (m) return `${m[3]}-${pad(MONTHS.indexOf(m[2]) + 1)}-${pad(m[1])}`;
+      m = t.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\b/);
+      if (m) return `${m[3]}-${pad(MONTHS.indexOf(m[1]) + 1)}-${pad(m[2])}`;
+      return "";
+    }
+
+    const SECTIONS = [
+      { key: "breaks", id: "rv-breaks", title: "Record breaks", hint: "The recheck says someone new holds these records. Apply keeps the old holder as a history page and puts the new one live." },
+      { key: "figures", id: "rv-figures", title: "Updated figures", hint: "Same holder, newer or more exact figure. Apply updates the number in place and adds the new sources." },
+      { key: "news", id: "rv-news", title: "News finds held", hint: "The daily news check found these but wasn't sure enough to publish them alone." },
+      { key: "drafts", id: "rv-drafts", title: "Researched drafts", hint: "New records we researched but never published. Publish the good ones, reject the rest." },
+    ];
+
+    function reviewCard(c, section) {
+      const j = c.claude_json || {};
+      const r = c.records || null;
+      const isNew = section === "drafts" || (section === "news" && !j.record_slug);
+      const mode = section === "figures" ? "refresh" : isNew ? "new" : "break";
+      const unit = c.unit || j.unit || r?.unit || "";
+      const valueText = c.proposed_value_text || j.current_value_text || j.value_text || "";
+      const num = c.proposed_value_numeric ?? j.value_numeric ?? guessNumber(valueText, unit);
+      const dateGuess = j.achieved_on || guessDate(j.review_note) || guessDate(j.note);
+      const v = {
+        title: j.title || r?.title || "",
+        holder: c.proposed_holder || j.current_holder || j.holder || "",
+        value_text: valueText,
+        value_numeric: num,
+        unit,
+        achieved_on: mode === "refresh" ? (dateGuess || r?.achieved_on || "") : dateGuess,
+        location: j.location || (mode === "refresh" ? r?.location : "") || "",
+        governing_body: j.governing_body || r?.governing_body || "",
+      };
+      const conf = j.confidence;
+      const pill = section === "breaks" && j.triage === "verified_break"
+        ? `<span class="pill ok">Checked: real break</span>`
+        : conf ? `<span class="pill ${conf === "high" ? "ok" : conf === "low" ? "bad" : "wait"}">${esc(conf)} confidence</span>` : "";
+      const triageLabel = { new_holder: "Possible new holder", needs_decision: "Needs your call", unconfirmed: "Not confirmed", verified_break: "", figure_update: "" }[j.triage];
+      const titleHtml = r?.slug
+        ? `<a href="/records/${esc(r.slug)}" target="_blank" rel="noopener">${esc(r.title)}</a>`
+        : esc(v.title);
+      const now = r ? `<p class="now"><strong>Live now:</strong> ${esc(r.holder)} · ${esc(r.value_text)} · ${esc(r.achieved_on || "no date")}</p>`
+        : section === "news" && j.record_slug
+          ? `<p class="now"><strong>Matches our record:</strong> <a href="/records/${esc(j.record_slug)}" target="_blank" rel="noopener">${esc(c.match_title || j.record_slug)}</a></p>`
+          : "";
+      const proposed = `<p class="proposed"><strong>${isNew ? "Record" : "Proposed"}:</strong> ${esc(v.holder)} · ${esc(v.value_text)}${v.achieved_on ? " · " + esc(v.achieved_on) : ""}</p>`;
+      const note = j.review_note || j.note;
+      const urls = [...new Set([...(c.source_urls || []), ...(j.sources || [])])];
+      const sources = urls.map((u) => `<li><a href="${esc(u)}" target="_blank" rel="noopener nofollow">${esc(u)}</a></li>`).join("");
+      const f = (k, label, val, extra = "") => `<label>${label} <input data-k="${k}" value="${esc(val ?? "")}" ${extra}/></label>`;
+      const cat = c.category_guess || j.category_slug || "";
+      const catOpts = `<option value="">Pick a category</option>` +
+        reviewCats.map((x) => `<option value="${esc(x.slug)}"${x.slug === cat ? " selected" : ""}>${esc(x.name)}</option>`).join("");
+      const applyLabel = { break: "Apply as new holder", refresh: "Update the figure", new: "Publish as new record" }[mode];
+      return `
+        <li class="item" data-id="${esc(c.id)}" data-mode="${mode}"${section === "news" && j.record_slug ? ` data-slug="${esc(j.record_slug)}"` : ""}>
+          <div class="tip-head">${pill}${triageLabel ? `<span class="pill wait">${esc(triageLabel)}</span>` : ""}<span class="meta">${esc(new Date(c.created_at).toLocaleDateString())}</span></div>
+          <h2>${titleHtml}</h2>
+          ${now}${proposed}
+          ${note ? `<p class="why">${esc(note)}</p>` : ""}
+          ${sources ? `<details><summary>Sources (${urls.length})</summary><ul class="srcs">${sources}</ul></details>` : `<p class="warntxt">No sources.</p>`}
+          <details${mode === "refresh" ? "" : " open"}>
+            <summary>${mode === "refresh" ? "Edit before applying" : "Values that will go live (edit if wrong)"}</summary>
+            <div class="fields">
+              ${isNew || section === "news" ? f("title", "Title", v.title) + `<label>Category <select data-k="category_slug">${catOpts}</select></label>` : ""}
+              ${f("holder", "Holder", v.holder)}
+              ${f("value_text", "Figure (as shown)", v.value_text)}
+              ${f("value_numeric", "Numeric value" + (unit ? ` (${esc(unit)})` : ""), v.value_numeric, 'inputmode="decimal"')}
+              ${f("unit", "Unit", v.unit)}
+              ${f("achieved_on", "Date set (YYYY-MM-DD)", v.achieved_on, 'placeholder="2026-10-03"')}
+              ${f("location", "Location", v.location)}
+              ${f("governing_body", "Official body", v.governing_body)}
+              ${isNew || section === "news" ? `<label>Better is <select data-k="better_direction">
+                <option value="higher"${j.better_direction !== "lower" ? " selected" : ""}>Higher</option>
+                <option value="lower"${j.better_direction === "lower" ? " selected" : ""}>Lower</option></select></label>` : ""}
+            </div>
+          </details>
+          <div class="actions">
+            <button type="button" class="primary" data-act="apply">${applyLabel}</button>
+            ${section === "news" && j.record_slug ? `<button type="button" data-act="apply-new">Publish as a separate record</button>` : ""}
+            <button type="button" data-act="reject">Reject</button>
+          </div>
+          <p class="row-status" role="status"></p>
+        </li>`;
+    }
+
+    function updateReviewCount() {
+      let total = 0;
+      for (const s of SECTIONS) {
+        const n = document.querySelectorAll(`#${s.id}-list > .item[data-id]`).length;
+        total += n;
+        document.querySelectorAll(`[data-count="${s.id}"]`).forEach((el) => (el.textContent = n));
+      }
+      $("review-count").textContent = "(" + total + ")";
+    }
+
+    async function loadReview() {
+      $("review-status").textContent = "Loading...";
+      try {
+        const d = await call({ action: "review_list" });
+        reviewCats = d.categories || [];
+        $("review-jump").innerHTML = SECTIONS.map((s) =>
+          `<a href="#${s.id}">${s.title} <span class="cnt" data-count="${s.id}">${d[s.key].length}</span></a>`).join("");
+        $("review-body").innerHTML = SECTIONS.map((s) => `
+          <section class="rv" id="${s.id}">
+            <div class="rv-head">
+              <h2>${s.title} <span class="cnt" data-count="${s.id}">${d[s.key].length}</span></h2>
+              ${d[s.key].length > 1 ? `<button type="button" data-bulk="${s.id}">Apply all ${s.title.toLowerCase()}</button>` : ""}
+            </div>
+            <p class="hint">${s.hint}</p>
+            <ul class="items" id="${s.id}-list">${d[s.key].map((c) => reviewCard(c, s.key)).join("") || "<li class='empty'>Nothing waiting.</li>"}</ul>
+          </section>`).join("");
+        updateReviewCount();
+        $("review-status").textContent = "";
+      } catch (e) {
+        $("review-status").textContent = e.message;
+      }
+    }
+
+    // Runs one card's action. Returns true when it worked.
+    async function reviewAct(li, act) {
+      const status = li.querySelector(".row-status");
+      const buttons = li.querySelectorAll("button");
+      const fields = {};
+      li.querySelectorAll("[data-k]").forEach((i) => (fields[i.dataset.k] = i.value.trim()));
+      let body;
+      if (act === "reject") body = { action: "review_reject", candidate_id: li.dataset.id };
+      else if (act === "apply-new") {
+        if (!fields.title) fields.title = li.querySelector("h2").textContent.trim();
+        body = { action: "review_apply", candidate_id: li.dataset.id, mode: "new", fields };
+      } else body = { action: "review_apply", candidate_id: li.dataset.id, mode: li.dataset.mode, fields, record_slug: li.dataset.slug || "" };
+      buttons.forEach((b) => (b.disabled = true));
+      status.textContent = "Working...";
+      try {
+        const out = await call(body);
+        li.removeAttribute("data-id");
+        li.className = "item done";
+        li.innerHTML = act === "reject"
+          ? `<p>Rejected: ${esc(li.querySelector("h2")?.textContent || "")}</p>`
+          : `<p>Done: <a href="/records/${esc(out.slug)}" target="_blank" rel="noopener">${esc(out.slug)}</a> is live.</p>`;
+        updateReviewCount();
+        return true;
+      } catch (err) {
+        status.textContent = err.message;
+        buttons.forEach((b) => (b.disabled = false));
+        return false;
+      }
+    }
+
+    $("review-body").addEventListener("click", async (e) => {
+      const bulk = e.target.closest("button[data-bulk]");
+      if (bulk) {
+        const cards = [...document.querySelectorAll(`#${bulk.dataset.bulk}-list > .item[data-id]`)];
+        if (!cards.length || !confirm(`Apply all ${cards.length} with the values shown? Cards with a problem stay open with the reason.`)) return;
+        bulk.disabled = true;
+        let ok = 0;
+        for (const [i, li] of cards.entries()) {
+          bulk.textContent = `Working ${i + 1} of ${cards.length}...`;
+          if (await reviewAct(li, "apply")) ok++;
+        }
+        bulk.textContent = `${ok} applied, ${cards.length - ok} need a look`;
+        return;
+      }
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const li = btn.closest(".item");
+      const act = btn.dataset.act;
+      if (act === "reject" && !confirm("Reject this? Nothing on the site changes.")) return;
+      if (li.dataset.mode === "break" && act === "apply" && !confirm("Put the new holder live? The current holder is kept as a history page.")) return;
+      await reviewAct(li, act);
+    });
 
     let loaded = false;
     function showFor(session) {
@@ -390,6 +611,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       if (session && !loaded) {
         loaded = true;
         loadDashboard();
+        loadReview();
         loadTips();
         loadQueue();
       }
@@ -486,11 +708,35 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     .admin .why { margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-left: 4px solid var(--amber); background: rgba(242, 179, 61, 0.12); }
     .admin .kv li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); }
     .admin .kv li.warn strong { color: var(--red); }
+    .admin .tiles .tile { font: inherit; text-align: left; border: 0; margin: 0; cursor: pointer; text-decoration: none; transition: transform 0.1s, box-shadow 0.1s; }
+    .admin .tiles .tile:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+    .admin .tiles .tile.hot { outline: 2px solid var(--amber); }
+    .admin .kv li.go { padding: 0; }
+    .admin .rowlink { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: 0.45rem 0; cursor: pointer; }
+    .admin .rowlink:hover span, .admin .rowlink:focus-visible span { text-decoration: underline; }
+    .admin .rowlink:focus-visible { outline: 2px solid var(--amber); }
+    .admin .kv li.go.warn strong { color: var(--red); }
+    .admin .jump { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.5rem; }
+    .admin .jump a { padding: 0.35rem 0.7rem; border: 1px solid var(--rule); border-radius: 999px; text-decoration: none; color: var(--ink); font-weight: 700; font-size: 0.9rem; }
+    .admin .jump a:hover { border-color: var(--ink); }
+    .admin .cnt { display: inline-block; min-width: 1.4em; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--amber); color: #17212b; font: 800 0.8rem/1.2 var(--display); text-align: center; }
+    .admin .rv { scroll-margin-top: 1rem; }
+    .admin .rv-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
+    .admin .rv-head h2 { margin-bottom: 0.4rem; }
+    .admin .proposed { margin: 0.3rem 0; padding: 0.3rem 0.5rem; background: rgba(31, 107, 58, 0.1); border-radius: 4px; }
+    .admin button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 700; }
+    .admin .item.done { padding: 0.5rem 1rem; opacity: 0.7; }
+    .admin .item.done p { margin: 0; }
+    .admin .items .empty { color: var(--ink-soft); }
+    .admin details summary { cursor: pointer; margin: 0.3rem 0; }
     @media (max-width: 34rem) { .admin .finds li { grid-template-columns: 1fr; gap: 0.3rem; } .admin .finds .pill { justify-self: start; } .admin .chart .d { font-size: 0.6rem; } .admin .tile .n { font-size: 1.8rem; } }
     .admin input { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid #bbb; border-radius: 6px; width: 100%; box-sizing: border-box; }
     .admin button { font: inherit; padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid #888; cursor: pointer; margin-right: 0.4rem; }
     .admin button:disabled { opacity: 0.5; cursor: default; }
-    .admin-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .admin-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .admin .tabs { flex-wrap: wrap; }
+    .admin .tab { white-space: nowrap; }
+    @media (max-width: 34rem) { .admin .tab, .admin #signout { padding: 0.45rem 0.6rem; font-size: 0.9rem; margin-right: 0; } }
     .admin .items { list-style: none; padding: 0; display: grid; gap: 1.2rem; }
     .admin .item { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
     .admin .item h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }

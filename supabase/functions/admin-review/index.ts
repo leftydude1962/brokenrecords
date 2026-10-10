@@ -15,6 +15,13 @@
 //   { action: "tip_update", candidate_id, record_slug, fields, credit }  apply a tip to an existing record
 //   { action: "tip_reject", candidate_id }
 //   { action: "subscribers_csv" }        every subscriber as CSV text, for backup or moving lists
+//   { action: "review_list" }            everything else waiting: recheck breaks, updated figures,
+//                                        held news finds, researched drafts
+//   { action: "review_apply", candidate_id, mode, fields, record_slug? }
+//        mode "break":   new holder for an existing record; the old holder is kept as a history page
+//        mode "refresh": same holder, newer figure; the record is updated in place, sources are added
+//        mode "new":     publish as a new record (fields need title and category_slug)
+//   { action: "review_reject", candidate_id }
 //
 // Approve follows the same steps as the recheck review: the old record is saved as a
 // superseded history row, the live record is updated, and last_checked_at is set to now.
@@ -68,6 +75,7 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "tips_list") return json(await listTips(sb), 200, origin);
+    if (body.action === "review_list") return json(await reviewList(sb), 200, origin);
     if (body.action === "subscribers_csv") {
       const rows: Record<string, unknown>[] = [];
       for (let from = 0; ; from += 1000) {
@@ -94,6 +102,18 @@ Deno.serve(async (req) => {
       const { error } = await sb.from("candidates").update({
         status: "rejected",
         claude_json: { ...t.claude_json, reviewed_by: email, reviewed_at: new Date().toISOString() },
+      }).eq("id", candidateId);
+      if (error) throw new Error(error.message);
+      return json({ ok: true }, 200, origin);
+    }
+
+    if (body.action === "review_apply") {
+      return json(await reviewApply(sb, candidateId, String(body.mode ?? ""), body.fields, String(body.record_slug ?? ""), email), 200, origin);
+    }
+    if (body.action === "review_reject") {
+      const c = await loadReviewItem(sb, candidateId);
+      const { error } = await sb.from("candidates").update({
+        status: "rejected", claude_json: { ...c.claude_json, reviewed_by: email, reviewed_at: new Date().toISOString() },
       }).eq("id", candidateId);
       if (error) throw new Error(error.message);
       return json({ ok: true }, 200, origin);
@@ -431,4 +451,116 @@ async function tipUpdate(sb: SupabaseClient, id: string, recordSlug: string, raw
   if (cErr) throw new Error(cErr.message);
   await tipLiveEmail(t, rec.slug, rec.title, !!name);
   return { ok: true, slug: rec.slug };
+}
+
+// ---------- Review: recheck results, held news finds, researched drafts ----------
+
+type ReviewItem = {
+  id: string; record_id: string | null; status: string; category_guess: string | null; source_urls: string[] | null;
+  proposed_holder: string | null; proposed_value_text: string | null; proposed_value_numeric: number | null; unit: string | null;
+  claude_json: Record<string, any>;
+};
+
+const REC_COLS = "id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body";
+
+async function reviewList(sb: SupabaseClient) {
+  const { data, error } = await sb.from("candidates")
+    .select(`id,created_at,record_id,category_guess,source_urls,proposed_holder,proposed_value_text,proposed_value_numeric,unit,claude_json,records(${REC_COLS})`)
+    .eq("status", "pending").order("created_at", { ascending: false }).limit(500);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<Record<string, any>>;
+  const kind = (r: Record<string, any>) => r.claude_json?.kind ?? "news";
+  const { data: recs } = await sb.from("records").select("slug,title").eq("status", "published");
+  const bySlug = new Map((recs ?? []).map((r) => [r.slug, r.title]));
+  const { data: cats } = await sb.from("categories").select("slug,name,parent_id").not("parent_id", "is", null).order("name");
+  return {
+    breaks: rows.filter((r) => kind(r) === "recheck" && r.claude_json?.triage !== "figure_update"),
+    figures: rows.filter((r) => kind(r) === "recheck" && r.claude_json?.triage === "figure_update"),
+    // A held news find may name a record we track (record_slug) even when record_id is empty.
+    news: rows.filter((r) => kind(r) === "news").map((r) => ({
+      ...r, match_title: r.claude_json?.record_slug ? bySlug.get(r.claude_json.record_slug) ?? null : null,
+    })),
+    drafts: rows.filter((r) => kind(r) === "draft" && r.claude_json?.source !== "tip" && r.claude_json?.state === "done"),
+    categories: (cats ?? []).filter((c) => !["buildings", "bridges", "structures"].includes(c.slug)).map((c) => ({ slug: c.slug, name: c.name })),
+  };
+}
+
+async function loadReviewItem(sb: SupabaseClient, id: string): Promise<ReviewItem> {
+  const { data, error } = await sb.from("candidates")
+    .select("id,record_id,status,category_guess,source_urls,proposed_holder,proposed_value_text,proposed_value_numeric,unit,claude_json")
+    .eq("id", id).single();
+  if (error || !data) throw new Error("Item not found.");
+  if (data.status !== "pending") throw new Error("This item was already decided.");
+  const k = data.claude_json?.kind;
+  if (k === "submission" || data.claude_json?.source === "tip") throw new Error("Use the Corrections or Tips tab for this item.");
+  return data as ReviewItem;
+}
+
+async function reviewApply(sb: SupabaseClient, id: string, mode: string, raw: unknown, recordSlug: string, reviewer: string) {
+  const c = await loadReviewItem(sb, id);
+  const f = recordFields(raw);
+  if (!f.holder) throw new Error("Enter the holder.");
+  if (!f.value_text && f.value_numeric == null) throw new Error("Enter the figure.");
+  const now = new Date().toISOString();
+  const urls = (c.source_urls ?? []).filter((u) => /^https?:\/\//.test(u));
+  let slug: string;
+
+  if (mode === "new") {
+    if (!f.title) throw new Error("Enter a title.");
+    const { data: cat } = await sb.from("categories").select("id").eq("slug", f.category_slug ?? "").maybeSingle();
+    if (!cat) throw new Error("Pick a category.");
+    const base = f.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
+    slug = base;
+    for (let i = 2; i < 50; i++) {
+      const { data: taken } = await sb.from("records").select("id").eq("slug", slug).maybeSingle();
+      if (!taken) break;
+      slug = `${base}-${i}`;
+    }
+    const { data: rec, error } = await sb.from("records").insert({
+      slug, category_id: cat.id, title: f.title, holder: f.holder, value_text: f.value_text, value_numeric: f.value_numeric,
+      unit: f.unit, achieved_on: f.achieved_on, location: f.location, governing_body: f.governing_body,
+      better_direction: f.better_direction, status: "published", last_verified_at: now, last_checked_at: now, updated_at: now,
+      visual_prompt: `A cinematic scene that represents this world record: ${f.title}. No people's faces.`,
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    await tipSources(sb, rec.id, urls);
+    await sb.from("candidates").update({ status: "approved", record_id: rec.id, claude_json: { ...c.claude_json, applied: "new", slug, reviewed_by: reviewer, reviewed_at: now } }).eq("id", id);
+    return { ok: true, slug };
+  }
+
+  // "break" and "refresh" change an existing record: the one the item belongs to, or the one picked.
+  let q = sb.from("records").select("*").eq("status", "published");
+  q = recordSlug ? q.eq("slug", recordSlug) : q.eq("id", c.record_id ?? "");
+  const { data: rec } = await q.maybeSingle();
+  if (!rec) throw new Error("The record to update was not found.");
+  slug = rec.slug;
+
+  if (mode === "break") {
+    const year = rec.achieved_on?.slice(0, 4) ?? "previous";
+    const { data: hist, error: hErr } = await sb.from("records").insert({
+      slug: `${rec.slug}-${year}-${crypto.randomUUID().slice(0, 4)}`, category_id: rec.category_id, title: `${rec.title} (${year})`,
+      holder: rec.holder, value_numeric: rec.value_numeric, value_text: rec.value_text, unit: rec.unit, better_direction: rec.better_direction,
+      achieved_on: rec.achieved_on, location: rec.location, governing_body: rec.governing_body, wikidata_id: rec.wikidata_id,
+      status: "superseded", superseded_by: rec.id, last_verified_at: rec.last_verified_at, featured: false,
+    }).select("id").single();
+    if (hErr) throw new Error(hErr.message);
+    await sb.from("record_sources").update({ record_id: hist.id }).eq("record_id", rec.id);
+    await tipSources(sb, rec.id, urls);
+  } else if (mode === "refresh") {
+    // Same holder, newer figure: keep the current sources and add the new ones that are not there yet.
+    const { data: have } = await sb.from("record_sources").select("url").eq("record_id", rec.id);
+    const known = new Set((have ?? []).map((s) => s.url));
+    await tipSources(sb, rec.id, urls.filter((u) => !known.has(u)));
+  } else {
+    throw new Error("Unknown mode.");
+  }
+
+  const { error: uErr } = await sb.from("records").update({
+    holder: f.holder, value_text: f.value_text, value_numeric: f.value_numeric, unit: f.unit ?? rec.unit,
+    achieved_on: f.achieved_on ?? (mode === "refresh" ? rec.achieved_on : null), location: f.location ?? rec.location,
+    governing_body: f.governing_body ?? rec.governing_body, last_verified_at: now, last_checked_at: now, updated_at: now,
+  }).eq("id", rec.id);
+  if (uErr) throw new Error(uErr.message);
+  await sb.from("candidates").update({ status: "approved", record_id: rec.id, claude_json: { ...c.claude_json, applied: mode, slug, reviewed_by: reviewer, reviewed_at: now } }).eq("id", id);
+  return { ok: true, slug };
 }
