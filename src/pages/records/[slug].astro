@@ -4,6 +4,7 @@ import Stat from "../../components/Stat.astro";
 import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
 import CorrectionForm from "../../components/CorrectionForm.astro";
+import TipPrompt from "../../components/TipPrompt.astro";
 import { getRecord, getRecords, getTaxonomy, getCurrentRecord, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
@@ -182,8 +183,10 @@ const facts = record
               </li>
             ))}
           </ul>
+          {record.tipped_by && <p class="tipped">Tipped off by {record.tipped_by}. Thank you.</p>}
           <p class="note">Spotted an error or a newer record? Use the form below with a source link.</p>
           <CorrectionForm slug={record.slug} />
+          <TipPrompt text="Know a different record we're missing?" category={record.categories?.slug} />
         </section>
 
         {related.length > 0 && record.categories && (
@@ -199,6 +202,7 @@ const facts = record
       <section class="missing">
         <h1>No record at this address.</h1>
         <p>The link may be old, or the record may have been renamed. <a href="/">Browse all records</a> instead.</p>
+        <TipPrompt text="Looking for a record we don't have yet?" />
       </section>
     </div>
   )}
@@ -240,6 +244,7 @@ const facts = record
   .src-quote { font-style: italic; color: var(--ink-soft); line-height: 1.5; }
   .lic { color: var(--ink-soft); font-size: 0.85rem; }
   .note { color: var(--ink-soft); max-width: 60ch; }
+  .tipped { margin: 1rem 0 0; font-weight: 600; }
   .missing { padding: 4rem 0; }
   .missing p { max-width: 50ch; }
 </style>

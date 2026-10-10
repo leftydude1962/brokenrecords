@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import RecordCards from "../components/RecordCards.astro";
 import LatestRecords from "../components/LatestRecords.astro";
+import TipPrompt from "../components/TipPrompt.astro";
 import { getTaxonomy, getRecords, cacheFor, type RecordRow } from "../lib/data";
 import { getLatest } from "../lib/latest";
 
@@ -40,6 +41,7 @@ const jsonLd = {
 
   <div class="wrap">
     <LatestRecords items={latest} />
+    <TipPrompt variant="band" />
   </div>
 
   <div class="wrap">

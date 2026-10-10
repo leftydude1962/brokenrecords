@@ -36,6 +36,7 @@ export type RecordRow = {
   story_at?: string | null;
   /** On a history (superseded) row: the id of the live record that replaced it. */
   superseded_by?: string | null;
+  tipped_by?: string | null;
 };
 
 const RECORD_SELECT =
@@ -102,7 +103,7 @@ export async function getRecords(opts: { categoryId?: string; categoryIds?: stri
 
 export async function getRecord(slug: string): Promise<RecordRow | null> {
   // The record page also needs the story and the source details; card lists don't.
-  const select = RECORD_SELECT.replace("record_sources(url,publisher,license)", "record_sources(url,publisher,license,title,published_on,quote)") + ",story,story_at,superseded_by";
+  const select = RECORD_SELECT.replace("record_sources(url,publisher,license)", "record_sources(url,publisher,license,title,published_on,quote)") + ",story,story_at,superseded_by,tipped_by";
   const rows = await rest<RecordRow[]>(
     `records?select=${select}&slug=eq.${encodeURIComponent(slug)}&status=in.(published,superseded)`,
   );

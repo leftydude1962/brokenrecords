@@ -1,0 +1,45 @@
+---
+// "Know a record we're missing?" prompt that links to /tip.
+// variant "band": a wide panel (home page). variant "inline": one line (category, search, record pages).
+// what and category fill in the form, so the visitor starts with the context they came from.
+type Props = { variant?: "band" | "inline"; what?: string; category?: string; text?: string; dark?: boolean };
+const { variant = "inline", what, category, text, dark = false } = Astro.props as Props;
+const params = new URLSearchParams();
+if (what) params.set("what", what.slice(0, 200));
+if (category) params.set("category", category);
+const href = "/tip" + (params.size ? `?${params}` : "");
+---
+{variant === "band" ? (
+  <section class="tip-band" aria-labelledby="tip-band-h">
+    <div class="tip-band-text">
+      <h2 id="tip-band-h">Saw a record fall? Tell us.</h2>
+      <p>
+        Send us the link to where it was reported. We check it against the source, and if it holds up it goes live here
+        with your name on it.
+      </p>
+    </div>
+    <a class="tip-cta" href={href}>Tip us off</a>
+  </section>
+) : (
+  <p class:list={["tip-line", { dark }]}>
+    {text ?? "Know a record we're missing?"}{" "}<a href={href}>Tip us off</a>
+  </p>
+)}
+
+<style>
+  .tip-band {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem 2rem;
+    margin-top: 2.5rem; padding: 1.5rem 1.5rem; border-radius: 10px;
+    background: var(--board); color: #fff; border-left: 6px solid var(--amber);
+  }
+  .tip-band h2 { color: #fff; font-size: 1.5rem; }
+  .tip-band p { margin: 0.4rem 0 0; max-width: 56ch; color: #c9d3dc; font-size: 1rem; }
+  .tip-cta {
+    display: inline-block; padding: 0.8rem 1.4rem; border-radius: 6px; background: var(--amber); color: #000;
+    font: 800 1.05rem/1 var(--display); text-decoration: none; white-space: nowrap;
+  }
+  .tip-cta:hover { filter: brightness(1.08); text-decoration: underline; }
+  .tip-line { margin: 1.5rem 0 0; font-size: 1rem; color: var(--ink-soft); }
+  .tip-line a { font-weight: 700; }
+  .tip-line.dark { color: #a9b6c2; }
+</style>

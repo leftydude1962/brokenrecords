@@ -44,6 +44,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
         <SiteSearch />
         <nav aria-label="Main">
           <a href="/category">Categories</a>
+          <a class="tip-btn" href="/tip">Tip a record</a>
         </nav>
       </div>
     </header>
@@ -53,9 +54,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <footer class="site-foot">
       <div class="wrap">
         <p>
-          Broken Records tracks recognized world records and links every entry to its sources. Each record shows the date we last checked it.
+          Broken Records tracks recognized world records and links every entry to its sources.
           We are not an official certifying body.
         </p>
+        <p><strong>Saw a record fall?</strong> <a href="/tip">Tip us off</a> and get credit when it goes live.</p>
         <p class="fine">Record data from Wikidata (CC0) and the sources listed on each page.</p>
         <p class="fine">A brand of <a href="https://mohrcreativegroup.com" rel="noopener">Mohr Creative Group</a> · <a href="/privacy">Privacy</a></p>
       </div>
@@ -123,6 +125,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
   .crack::after { clip-path: polygon(0 60%, 36% 42%, 66% 62%, 100% 40%, 100% 100%, 0 100%); transform: translate(3px, 3px) rotate(2deg); }
   .site-head nav a { font-family: var(--display); font-weight: 600; color: #d5dde4; text-decoration: none; }
   .site-head nav a:hover { text-decoration: underline; }
+  .site-head nav { display: flex; align-items: center; gap: 1.1rem; }
+  .site-head nav a.tip-btn { color: #000; background: var(--amber); padding: 0.45rem 0.8rem; border-radius: 6px; font-weight: 800; white-space: nowrap; }
+  .site-head nav a.tip-btn:hover { filter: brightness(1.08); }
 
   main { padding-bottom: 4rem; }
   .band { background: var(--night); color: #fff; padding-bottom: 3rem; }

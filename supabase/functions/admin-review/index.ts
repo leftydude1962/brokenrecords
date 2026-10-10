@@ -10,6 +10,10 @@
 //   { action: "approve", candidate_id, fields: { holder, value_numeric, value_text, unit, achieved_on, location } }
 //   { action: "reject", candidate_id }
 //   { action: "hold", candidate_id }
+//   { action: "tips_list" }                                         tips from /tip with research results
+//   { action: "tip_publish", candidate_id, fields, credit }          publish a tip as a new record
+//   { action: "tip_update", candidate_id, record_slug, fields, credit }  apply a tip to an existing record
+//   { action: "tip_reject", candidate_id }
 //
 // Approve follows the same steps as the recheck review: the old record is saved as a
 // superseded history row, the live record is updated, and last_checked_at is set to now.
@@ -62,8 +66,22 @@ Deno.serve(async (req) => {
       return json(data, 200, origin);
     }
 
+    if (body.action === "tips_list") return json(await listTips(sb), 200, origin);
+
     const candidateId = typeof body.candidate_id === "string" ? body.candidate_id : "";
     if (!candidateId) return json({ error: "Missing submission." }, 400, origin);
+
+    if (body.action === "tip_publish") return json(await tipPublish(sb, candidateId, body.fields, body.credit === true, email), 200, origin);
+    if (body.action === "tip_update") return json(await tipUpdate(sb, candidateId, String(body.record_slug ?? ""), body.fields, body.credit === true, email), 200, origin);
+    if (body.action === "tip_reject") {
+      const t = await loadTip(sb, candidateId);
+      const { error } = await sb.from("candidates").update({
+        status: "rejected",
+        claude_json: { ...t.claude_json, reviewed_by: email, reviewed_at: new Date().toISOString() },
+      }).eq("id", candidateId);
+      if (error) throw new Error(error.message);
+      return json({ ok: true }, 200, origin);
+    }
 
     if (body.action === "reject") return json(await setStatus(sb, candidateId, "rejected", email), 200, origin);
     if (body.action === "hold") return json(await hold(sb, candidateId, email), 200, origin);
@@ -192,4 +210,180 @@ async function loadSubmission(sb: SupabaseClient, id: string) {
   if (data.status !== "pending") throw new Error("This submission was already decided.");
   if (data.claude_json?.kind !== "submission") throw new Error("This is not a correction submission.");
   return data as { id: string; record_id: string; status: string; claude_json: Record<string, unknown> };
+}
+
+// ---------- Tips from the public /tip form ----------
+
+type Tip = { id: string; category_guess: string | null; source_urls: string[] | null; claude_json: Record<string, unknown> };
+
+// "www.espn.com/x" -> "espn.com". Used as the publisher shown next to each source.
+function site(url: string): string | null {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    const p = h.split(".");
+    const twoPartTld = /^(co|com|org|net|gov|ac)\.[a-z]{2}$/.test(p.slice(-2).join("."));
+    return p.slice(twoPartTld ? -3 : -2).join(".");
+  } catch { return null; }
+}
+
+const STOP = new Set(["the", "and", "for", "from", "with", "most", "world", "record", "largest", "biggest", "longest", "fastest", "highest", "heaviest", "oldest"]);
+const words = (s: string) => [...new Set(s.toLowerCase().normalize("NFKD").split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)))];
+
+// Published records whose titles share most of their words with the tip's title.
+function similar(title: string, recs: { slug: string; title: string; holder: string | null; value_text: string | null }[]) {
+  const a = words(title);
+  if (!a.length) return [];
+  return recs
+    .map((r) => {
+      const b = words(r.title);
+      const shared = a.filter((w) => b.includes(w)).length;
+      return { r, score: b.length ? shared / Math.max(1, Math.min(a.length, b.length)) : 0 };
+    })
+    .filter((x) => x.score >= 0.6)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, 3)
+    .map((x) => x.r);
+}
+
+async function listTips(sb: SupabaseClient) {
+  const { data, error } = await sb
+    .from("candidates")
+    .select("id,created_at,category_guess,source_urls,proposed_holder,proposed_value_text,proposed_value_numeric,unit,claude_json")
+    .eq("status", "pending")
+    .eq("claude_json->>kind", "draft")
+    .eq("claude_json->>source", "tip")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(error.message);
+  const { data: recs } = await sb.from("records").select("slug,title,holder,value_text").eq("status", "published");
+  const { data: cats } = await sb.from("categories").select("slug,name,parent_id").not("parent_id", "is", null).order("name");
+  const items = (data ?? []).map((t) => ({
+    ...t,
+    matches: similar(String(t.claude_json?.title ?? t.claude_json?.tip?.what ?? ""), recs ?? []),
+  }));
+  return {
+    items,
+    categories: (cats ?? []).filter((c) => !["buildings", "bridges", "structures"].includes(c.slug)).map((c) => ({ slug: c.slug, name: c.name })),
+  };
+}
+
+async function loadTip(sb: SupabaseClient, id: string): Promise<Tip> {
+  const { data, error } = await sb.from("candidates").select("id,status,category_guess,source_urls,claude_json").eq("id", id).single();
+  if (error || !data) throw new Error("Tip not found.");
+  if (data.status !== "pending") throw new Error("This tip was already decided.");
+  if (data.claude_json?.kind !== "draft" || data.claude_json?.source !== "tip") throw new Error("This is not a tip.");
+  return data as Tip;
+}
+
+// Reads and checks the record fields sent from the admin page. Blank strings become null.
+function recordFields(raw: unknown) {
+  const f = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const s = (k: string, max = 300) => (typeof f[k] === "string" && (f[k] as string).trim() ? (f[k] as string).trim().slice(0, max) : null);
+  const n = f.value_numeric === "" || f.value_numeric == null ? null : Number(f.value_numeric);
+  if (n !== null && !Number.isFinite(n)) throw new Error("The numeric value must be a number.");
+  const d = s("achieved_on", 10);
+  if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("Date must look like 2026-10-03.");
+  const dir = s("better_direction");
+  return {
+    title: s("title", 120),
+    category_slug: s("category_slug", 60),
+    holder: s("holder"),
+    value_text: s("value_text"),
+    value_numeric: n,
+    unit: s("unit", 40),
+    achieved_on: d,
+    location: s("location"),
+    governing_body: s("governing_body", 120),
+    better_direction: dir === "lower" ? "lower" : "higher",
+  };
+}
+
+async function tipSources(sb: SupabaseClient, recordId: string, urls: string[]) {
+  const rows = [...new Set(urls)].filter((u) => /^https?:\/\//.test(u)).slice(0, 5)
+    .map((u) => ({ record_id: recordId, url: u, publisher: site(u), license: null }));
+  if (rows.length) {
+    const { error } = await sb.from("record_sources").insert(rows);
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function tipPublish(sb: SupabaseClient, id: string, raw: unknown, credit: boolean, reviewer: string) {
+  const t = await loadTip(sb, id);
+  const f = recordFields(raw);
+  if (!f.title) throw new Error("Enter a title.");
+  if (!f.holder) throw new Error("Enter the holder.");
+  if (!f.value_text && f.value_numeric == null) throw new Error("Enter the figure.");
+  const { data: cat } = await sb.from("categories").select("id").eq("slug", f.category_slug ?? "").maybeSingle();
+  if (!cat) throw new Error("Pick a category.");
+
+  // A unique address made from the title: "heaviest-pumpkin", then "heaviest-pumpkin-2" and so on.
+  const base = f.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
+  let slug = base;
+  for (let i = 2; i < 50; i++) {
+    const { data: taken } = await sb.from("records").select("id").eq("slug", slug).maybeSingle();
+    if (!taken) break;
+    slug = `${base}-${i}`;
+  }
+
+  const name = credit ? String((t.claude_json.tip as Record<string, unknown>)?.name ?? "").trim() || null : null;
+  const now = new Date().toISOString();
+  const { data: rec, error } = await sb.from("records").insert({
+    slug, category_id: cat.id, title: f.title, holder: f.holder, value_text: f.value_text, value_numeric: f.value_numeric,
+    unit: f.unit, achieved_on: f.achieved_on, location: f.location, governing_body: f.governing_body,
+    better_direction: f.better_direction, status: "published", tipped_by: name,
+    last_verified_at: now, last_checked_at: now, updated_at: now,
+    // media-gen makes the poster from this within a few minutes.
+    visual_prompt: `A cinematic scene that represents this world record: ${f.title}. No people's faces.`,
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  await tipSources(sb, rec.id, t.source_urls ?? []);
+
+  const { error: cErr } = await sb.from("candidates").update({
+    status: "approved", record_id: rec.id,
+    claude_json: { ...t.claude_json, applied: "new", slug, reviewed_by: reviewer, reviewed_at: now },
+  }).eq("id", id);
+  if (cErr) throw new Error(cErr.message);
+  return { ok: true, slug };
+}
+
+async function tipUpdate(sb: SupabaseClient, id: string, recordSlug: string, raw: unknown, credit: boolean, reviewer: string) {
+  const t = await loadTip(sb, id);
+  const f = recordFields(raw);
+  if (!f.holder) throw new Error("Enter the holder.");
+  if (!f.value_text && f.value_numeric == null) throw new Error("Enter the figure.");
+  const { data: rec, error: rErr } = await sb.from("records").select("*").eq("slug", recordSlug).eq("status", "published").maybeSingle();
+  if (rErr || !rec) throw new Error("That record was not found.");
+
+  // 1. Keep the current holder as a history page that points to the live record.
+  const year = rec.achieved_on?.slice(0, 4) ?? "previous";
+  const now = new Date().toISOString();
+  const { data: hist, error: hErr } = await sb.from("records").insert({
+    slug: `${rec.slug}-${year}-${crypto.randomUUID().slice(0, 4)}`,
+    category_id: rec.category_id, title: `${rec.title} (${year})`, holder: rec.holder,
+    value_numeric: rec.value_numeric, value_text: rec.value_text, unit: rec.unit, better_direction: rec.better_direction,
+    achieved_on: rec.achieved_on, location: rec.location, governing_body: rec.governing_body, wikidata_id: rec.wikidata_id,
+    status: "superseded", superseded_by: rec.id, last_verified_at: rec.last_verified_at, featured: false,
+  }).select("id").single();
+  if (hErr) throw new Error(hErr.message);
+
+  // 2. Move the current sources to the history page, then give the live record the tip's sources.
+  const { error: mErr } = await sb.from("record_sources").update({ record_id: hist.id }).eq("record_id", rec.id);
+  if (mErr) throw new Error(mErr.message);
+  await tipSources(sb, rec.id, t.source_urls ?? []);
+
+  // 3. Update the live record.
+  const name = credit ? String((t.claude_json.tip as Record<string, unknown>)?.name ?? "").trim() || null : null;
+  const { error: uErr } = await sb.from("records").update({
+    holder: f.holder, value_text: f.value_text, value_numeric: f.value_numeric, unit: f.unit ?? rec.unit,
+    achieved_on: f.achieved_on, location: f.location, governing_body: f.governing_body ?? rec.governing_body,
+    tipped_by: name, last_verified_at: now, last_checked_at: now, updated_at: now,
+  }).eq("id", rec.id);
+  if (uErr) throw new Error(uErr.message);
+
+  const { error: cErr } = await sb.from("candidates").update({
+    status: "approved", record_id: rec.id,
+    claude_json: { ...t.claude_json, applied: "update", slug: rec.slug, reviewed_by: reviewer, reviewed_at: now },
+  }).eq("id", id);
+  if (cErr) throw new Error(cErr.message);
+  return { ok: true, slug: rec.slug };
 }

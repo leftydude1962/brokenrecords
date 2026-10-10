@@ -8,6 +8,10 @@
 //
 // It NEVER creates or changes a record. Publishing happens only after a person approves.
 //
+// Tips from the public /tip form (claude_json.source = "tip") are free text, so for those it
+// also asks for a clean title, the category, which direction is better, and whether the tip
+// describes a real, reported record (is_record). The visitor's link is given to the search.
+//
 // Body options: {"limit": 3} at most this many topics per call (default 3, max 8).
 // Secret: PERPLEXITY_API_KEY (or PERPLEXITY_AI_KEY).
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -32,6 +36,19 @@ const SCHEMA = {
     note: { type: "string" },
   },
   required: ["holder", "value_numeric", "unit", "value_text", "achieved_on", "location", "governing_body", "definition", "confidence", "sources", "note"],
+};
+
+// Extra fields asked for tips only.
+const TIP_SCHEMA = {
+  ...SCHEMA,
+  properties: {
+    ...SCHEMA.properties,
+    title: { type: "string" },
+    category_slug: { type: "string" },
+    better_direction: { type: "string", enum: ["higher", "lower"] },
+    is_record: { type: "boolean" },
+  },
+  required: [...SCHEMA.required, "title", "category_slug", "better_direction", "is_record"],
 };
 
 type Row = { id: string; category_guess: string | null; claude_json: Record<string, unknown> };
@@ -68,10 +85,18 @@ Deno.serve(async (req) => {
     await sb.from("candidates").update({ claude_json: { ...r.claude_json, state: "working" } }).eq("id", r.id);
   }
 
+  // Category slugs a tip can be filed under (categories that hold records, not the top-level sections).
+  let cats: string[] = [];
+  if (rows.some((r) => r.claude_json.source === "tip")) {
+    const { data: c } = await sb.from("categories").select("slug,parent_id").not("parent_id", "is", null);
+    // Old category names merged into "architecture" are left out (see MERGED_CATEGORIES in src/lib/data.ts).
+    cats = (c ?? []).map((x) => x.slug).filter((x) => !["buildings", "bridges", "structures"].includes(x));
+  }
+
   // One at a time, because Perplexity limits how many requests run at once.
   const results: unknown[] = [];
   for (const r of rows) {
-    results.push(await research(sb, r).catch(async (e) => {
+    results.push(await research(sb, r, cats).catch(async (e) => {
       await sb.from("candidates").update({ claude_json: { ...r.claude_json, state: "error", error: String(e).slice(0, 300) } }).eq("id", r.id);
       return { id: r.id, error: String(e).slice(0, 200) };
     }));
@@ -79,7 +104,7 @@ Deno.serve(async (req) => {
   return json({ done: results.length, results });
 });
 
-async function research(sb: SupabaseClient, r: Row) {
+async function research(sb: SupabaseClient, r: Row, cats: string[]) {
   const title = String(r.claude_json.title ?? "");
   const direction = String(r.claude_json.better_direction ?? "higher");
   const today = new Date().toISOString().slice(0, 10);
@@ -100,7 +125,22 @@ async function research(sb: SupabaseClient, r: Row) {
       "That answer was not well supported. Check it against at least two independent, authoritative sources. Correct anything that is wrong or out of date. " +
       "If you cannot find two independent sources that agree, set confidence to 'low'. If the topic has no clear single record, say so in the note and set confidence to 'low'."
     : "";
-  const user = `Topic: ${title}\nCategory: ${r.category_guess ?? "unknown"}\nA ${direction} figure is better.${check}\n\nReturn holder, value_numeric, unit, value_text, achieved_on (YYYY-MM-DD, or null if unknown), location, governing_body, definition, confidence, sources (the URLs you relied on, at most 5), and a one-sentence note.`;
+  const tip = r.claude_json.source === "tip" ? (r.claude_json.tip as Record<string, string | null>) : null;
+  const user = tip
+    ? `A visitor sent this tip about a world record that was set or broken.\n` +
+      `Tip: ${tip.what}\n` + (tip.details ? `Details: ${tip.details}\n` : "") + `Where it was reported: ${tip.url}\n` +
+      `Visitor's category guess: ${r.category_guess ?? "none"}\n\n` +
+      "Check the tip against the reported link and other sources. Visitors can be wrong or joking. " +
+      "Set is_record to true only if credible sources report a real record (a world record or an officially recognized record) " +
+      "matching the tip. A personal best, a local or school record, a rumor or an attempt that failed is not a record. " +
+      "If the tip is real but the details are wrong, report the correct details. " +
+      "If the tip's claim is false or not a record, set is_record to false and confidence to low, and say why in the note. " +
+      "Never answer a false tip with a different record on the same topic.\n" +
+      "title: a short record title in this style: 'Heaviest pumpkin', 'Men's 100 m', 'Most expensive guitar sold at auction'. No holder name in the title.\n" +
+      `category_slug: the best fit from this list: ${cats.join(", ")}.\n` +
+      "better_direction: 'lower' for times and other records where less is better, otherwise 'higher'.\n\n" +
+      "Return title, category_slug, better_direction, is_record, holder, value_numeric, unit, value_text, achieved_on (YYYY-MM-DD, or null if unknown), location, governing_body, definition, confidence, sources (the URLs you relied on, at most 5), and a one-sentence note."
+    : `Topic: ${title}\nCategory: ${r.category_guess ?? "unknown"}\nA ${direction} figure is better.${check}\n\nReturn holder, value_numeric, unit, value_text, achieved_on (YYYY-MM-DD, or null if unknown), location, governing_body, definition, confidence, sources (the URLs you relied on, at most 5), and a one-sentence note.`;
 
   let res: Response | undefined, text = "";
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -110,7 +150,7 @@ async function research(sb: SupabaseClient, r: Row) {
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        response_format: { type: "json_schema", json_schema: { name: "draft", schema: SCHEMA } },
+        response_format: { type: "json_schema", json_schema: { name: "draft", schema: tip ? TIP_SCHEMA : SCHEMA } },
       }),
       signal: AbortSignal.timeout(100_000),
     });
@@ -134,16 +174,21 @@ async function research(sb: SupabaseClient, r: Row) {
   const cited = new Set<string>([...(j.citations ?? []), ...((j.search_results ?? []).map((s: { url: string }) => s.url))]);
   const claimed: string[] = (out.sources ?? []).filter((u: string) => /^https?:\/\//.test(u));
   const backed = claimed.filter((u) => cited.has(u));
-  const urls = [...new Set(backed.length ? backed : [...cited])].slice(0, 5);
+  // The visitor's link is kept as a source only when the tip checks out.
+  const keepTipUrl = tip?.url && out.is_record === true;
+  const urls = [...new Set([...(backed.length ? backed : [...cited]), ...(keepTipUrl ? [tip.url] : [])])].slice(0, 5);
+  if (tip && !cats.includes(String(out.category_slug ?? ""))) out.category_slug = r.category_guess ?? null;
   const sites = new Set(urls.map(site).filter(Boolean));
 
   const { error } = await sb.from("candidates").update({
+    ...(tip && out.category_slug ? { category_guess: out.category_slug } : {}),
     proposed_holder: out.holder ?? null,
     proposed_value_numeric: typeof out.value_numeric === "number" ? out.value_numeric : null,
     proposed_value_text: out.value_text ?? null,
     unit: out.unit ?? null,
     source_urls: urls,
     checks_passed: { confidence: out.confidence, independent_sites: sites.size },
+    // For a tip, keep the visitor's original words in tip.what; out.title is the cleaned-up title.
     claude_json: { ...r.claude_json, ...out, state: "done", model: MODEL, cost, researched_at: new Date().toISOString() },
   }).eq("id", r.id);
   if (error) throw new Error(error.message);

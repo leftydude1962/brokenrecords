@@ -23,6 +23,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       <div class="admin-bar">
         <nav class="tabs" aria-label="Admin sections">
           <button type="button" class="tab" data-tab="dash" aria-pressed="true">Today</button>
+          <button type="button" class="tab" data-tab="tips" aria-pressed="false">Tips <span id="tip-count"></span></button>
           <button type="button" class="tab" data-tab="queue" aria-pressed="false">Corrections <span id="count"></span></button>
         </nav>
         <button type="button" id="signout">Sign out</button>
@@ -69,6 +70,12 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           <p class="hint">What visitors looked for and did not find. Good candidates for new records.</p>
           <ul class="kv" id="misses"></ul>
         </div>
+      </section>
+
+      <section id="tips" hidden>
+        <p class="hint">Tips from the public form. Each one is researched within about 10 minutes, then waits for you here.</p>
+        <p id="tips-status" role="status"></p>
+        <ul id="tip-items" class="items"></ul>
       </section>
 
       <section id="queue" hidden>
@@ -176,7 +183,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
         $("t-new").textContent = live;
         $("t-broken").textContent = today.broken ?? 0;
         $("t-live").textContent = t.published.toLocaleString();
-        $("t-wait").textContent = (q.corrections + q.news + q.recheck_breaks + q.recheck_figures).toLocaleString();
+        $("t-wait").textContent = ((q.tips ?? 0) + q.corrections + q.news + q.recheck_breaks + q.recheck_figures).toLocaleString();
 
         $("finds").innerHTML = d.today_news.length
           ? d.today_news.map((f) => {
@@ -203,6 +210,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           `<td>${x.news_live}</td><td>${x.added}</td><td>${x.broken}</td><td>${money(x.cost)}</td></tr>`).join("");
 
         $("queues").innerHTML = kv([
+          ["Tips from visitors", q.tips ?? 0, (q.tips ?? 0) > 0],
           ["Corrections from visitors", q.corrections, q.corrections > 0],
           ["News finds held for review", q.news, q.news > 0],
           ["Recheck: possible new record holders", q.recheck_breaks, q.recheck_breaks > 0],
@@ -226,9 +234,113 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       }
     }
 
+    // ---------- Tips ----------
+    let tipCats = [];
+    function tipCard(t) {
+      const j = t.claude_json || {};
+      const tip = j.tip || {};
+      const state = j.state;
+      const researched = state === "done";
+      const badge = !researched
+        ? `<span class="pill wait">${state === "error" ? "Research failed" : "Researching"}</span>`
+        : j.is_record === false
+          ? `<span class="pill bad">Doesn't look like a record</span>`
+          : `<span class="pill ok">Looks real · ${esc(j.confidence || "?")} confidence</span>`;
+      const cat = t.category_guess || j.category_slug || "";
+      const catOpts = `<option value="">Pick a category</option>` +
+        tipCats.map((c) => `<option value="${esc(c.slug)}"${c.slug === cat ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+      const f = (k, label, v, extra = "") => `<label>${label} <input data-k="${k}" value="${esc(v ?? "")}" ${extra}/></label>`;
+      const matches = (t.matches || []).map((m, i) =>
+        `<label class="match"><input type="radio" name="m-${esc(t.id)}" value="${esc(m.slug)}"${i === 0 ? " checked" : ""}/> ` +
+        `<a href="/records/${esc(m.slug)}" target="_blank" rel="noopener">${esc(m.title)}</a> <span class="fm">${esc(m.holder)} · ${esc(m.value_text)}</span></label>`).join("");
+      const sources = (t.source_urls || []).map((u) => `<li><a href="${esc(u)}" target="_blank" rel="noopener nofollow">${esc(u)}</a></li>`).join("");
+      return `
+        <li class="item" data-id="${esc(t.id)}">
+          <div class="tip-head">${badge}<span class="meta">${esc(new Date(t.created_at).toLocaleString())}</span></div>
+          <h2>${esc(j.title || tip.what)}</h2>
+          <p class="correction"><strong>Visitor wrote:</strong> ${esc(tip.what)}${tip.details ? " · " + esc(tip.details) : ""}</p>
+          <p><strong>Their link:</strong> <a href="${esc(tip.url)}" target="_blank" rel="noopener nofollow">${esc(tip.url)}</a></p>
+          <p class="meta">${tip.name ? "From " + esc(tip.name) : "No name given"}${tip.email ? " · " + esc(tip.email) : ""}</p>
+          ${researched && j.note ? `<p class="now"><strong>Research:</strong> ${esc(j.note)}</p>` : ""}
+          ${state === "error" ? `<p class="row-status">${esc(j.error || "")}</p>` : ""}
+          ${researched ? `
+          <details open>
+            <summary>Record details (edit before publishing)</summary>
+            <div class="fields">
+              ${f("title", "Title", j.title)}
+              <label>Category <select data-k="category_slug">${catOpts}</select></label>
+              ${f("holder", "Holder", t.proposed_holder)}
+              ${f("value_text", "Figure (as shown)", t.proposed_value_text)}
+              ${f("value_numeric", "Numeric value", t.proposed_value_numeric, 'inputmode="decimal"')}
+              ${f("unit", "Unit", t.unit)}
+              ${f("achieved_on", "Date set (YYYY-MM-DD)", j.achieved_on, 'placeholder="2026-10-03"')}
+              ${f("location", "Location", j.location)}
+              ${f("governing_body", "Official body", j.governing_body)}
+              <label>Better is <select data-k="better_direction">
+                <option value="higher"${j.better_direction !== "lower" ? " selected" : ""}>Higher</option>
+                <option value="lower"${j.better_direction === "lower" ? " selected" : ""}>Lower</option></select></label>
+            </div>
+            ${sources ? `<p><strong>Sources:</strong></p><ul class="srcs">${sources}</ul>` : ""}
+          </details>
+          ${matches ? `<div class="matches"><p><strong>We may already have this record.</strong> Pick one to update it instead:</p>${matches}</div>` : ""}
+          ${tip.name ? `<label class="credit"><input type="checkbox" data-credit checked /> Credit "Tipped by ${esc(tip.name)}"</label>` : ""}
+          <div class="actions">
+            <button type="button" data-act="tip_publish">Publish as new record</button>
+            ${matches ? `<button type="button" data-act="tip_update">Update the picked record</button>` : ""}
+            <button type="button" data-act="tip_reject">Reject</button>
+          </div>` : `<div class="actions"><button type="button" data-act="tip_reject">Reject</button></div>`}
+          <p class="row-status" role="status"></p>
+        </li>`;
+    }
+
+    async function loadTips() {
+      $("tips-status").textContent = "Loading...";
+      try {
+        const { items, categories } = await call({ action: "tips_list" });
+        tipCats = categories || [];
+        $("tip-count").textContent = "(" + items.length + ")";
+        $("tip-items").innerHTML = items.map(tipCard).join("") || "<li>No tips waiting.</li>";
+        $("tips-status").textContent = "";
+      } catch (e) {
+        $("tips-status").textContent = e.message;
+      }
+    }
+
+    $("tip-items").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const li = btn.closest(".item");
+      const act = btn.dataset.act;
+      const all = li.querySelectorAll(".row-status");
+      const status = all[all.length - 1];
+      if (act === "tip_reject" && !confirm("Reject this tip?")) return;
+      const fields = {};
+      li.querySelectorAll("[data-k]").forEach((i) => (fields[i.dataset.k] = i.value.trim()));
+      const body = { action: act, candidate_id: li.dataset.id, fields, credit: !!li.querySelector("[data-credit]")?.checked };
+      if (act === "tip_update") {
+        body.record_slug = li.querySelector("input[type=radio]:checked")?.value || "";
+        if (!confirm("Update that record? The current holder is kept as a history page.")) return;
+      }
+      const buttons = li.querySelectorAll("button");
+      buttons.forEach((b) => (b.disabled = true));
+      status.textContent = "Working...";
+      try {
+        const out = await call(body);
+        li.innerHTML = act === "tip_reject"
+          ? "<p>Rejected.</p>"
+          : `<p>Done. <a href="/records/${esc(out.slug)}" target="_blank" rel="noopener">See the record</a>. The poster appears within a few minutes.</p>`;
+        const left = $("tip-items").querySelectorAll(".item .actions").length;
+        $("tip-count").textContent = "(" + left + ")";
+      } catch (err) {
+        status.textContent = err.message;
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    });
+
     function showTab(name) {
       document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === name)));
       $("dash").hidden = name !== "dash";
+      $("tips").hidden = name !== "tips";
       $("queue").hidden = name !== "queue";
     }
     document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -240,6 +352,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       if (session && !loaded) {
         loaded = true;
         loadDashboard();
+        loadTips();
         loadQueue();
       }
     }
@@ -324,6 +437,14 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     .admin .daily th, .admin .daily td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
     .admin .cols { display: grid; gap: 0 2rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
     .admin .kv { list-style: none; padding: 0; margin: 0; }
+    .admin .tip-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.4rem; }
+    .admin .fields select { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid #bbb; border-radius: 6px; width: 100%; }
+    .admin .srcs { margin: 0.2rem 0 0.6rem; padding-left: 1.2rem; font-size: 0.9rem; word-break: break-all; }
+    .admin .matches { margin: 0.6rem 0; padding: 0.7rem 0.8rem; border: 1px dashed var(--rule); border-radius: 6px; }
+    .admin .matches p { margin: 0 0 0.4rem; }
+    .admin .match { display: block; padding: 0.2rem 0; }
+    .admin .match input, .admin .credit input { width: auto; }
+    .admin .credit { display: block; margin: 0.5rem 0; }
     .admin .kv li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); }
     .admin .kv li.warn strong { color: var(--red); }
     @media (max-width: 34rem) { .admin .finds li { grid-template-columns: 1fr; gap: 0.3rem; } .admin .finds .pill { justify-self: start; } .admin .chart .d { font-size: 0.6rem; } .admin .tile .n { font-size: 1.8rem; } }

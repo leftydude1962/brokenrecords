@@ -3,6 +3,7 @@
 // filter row (Baseball, Football...). A category (Baseball) shows its own records.
 import Base from "../../layouts/Base.astro";
 import RecordCards from "../../components/RecordCards.astro";
+import TipPrompt from "../../components/TipPrompt.astro";
 import { getTaxonomy, getRecords, cacheFor, MERGED_CATEGORIES } from "../../lib/data";
 
 const moved = MERGED_CATEGORIES[Astro.params.slug!];
@@ -53,6 +54,7 @@ const image = records.find((r) => r.featured && r.poster_url)?.poster_url ?? rec
           ) : (
             <p class="empty">No {name.toLowerCase()} records are published yet. <a href="/">See all categories</a>.</p>
           )}
+          <TipPrompt dark text={`Know a ${name.toLowerCase()} record we're missing, or one that just fell?`} category={isSection ? undefined : slug} />
         </>
       ) : (
         <>

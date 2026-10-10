@@ -1,0 +1,183 @@
+---
+// Public "Tip us off" form. A tip never publishes anything by itself: it is researched, then
+// the owner approves it on /admin. Posts to the record-tip edge function.
+import Base from "../layouts/Base.astro";
+import { getTaxonomy, cacheFor } from "../lib/data";
+
+const what = (Astro.url.searchParams.get("what") ?? "").trim().slice(0, 200);
+const category = (Astro.url.searchParams.get("category") ?? "").trim();
+let sections: Awaited<ReturnType<typeof getTaxonomy>>["sections"] = [];
+try {
+  ({ sections } = await getTaxonomy());
+} catch {
+  // The form still works without the category list.
+}
+cacheFor(600, Astro.response);
+
+const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/record-tip";
+// Turnstile site key. Public by design. The secret key lives only in Supabase.
+const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
+---
+<Base
+  title="Tip us off to a world record | Broken Records"
+  description="Saw a world record set or broken? Send us the link. We check every tip against its source, and published tips credit the person who sent them."
+>
+  <section class="band tip-hero">
+    <div class="wrap">
+      <h1>Saw a record fall? Tell us.</h1>
+      <p class="lede muted">
+        A new world record, a record we don't have yet, or one that just got broken. Send the link to where it was reported.
+      </p>
+    </div>
+  </section>
+
+  <div class="wrap tip-grid">
+    <form class="tip-form" data-endpoint={endpoint} novalidate>
+      <label>
+        <span class="l">What record was set or broken?</span>
+        <input name="what" required minlength="5" maxlength="200" value={what}
+          placeholder="Example: Heaviest pumpkin, 1,295.8 kg, Ian Paton" />
+      </label>
+      <label>
+        <span class="l">Where was it reported?</span>
+        <span class="h">A link to a news story, an official body or Guinness World Records.</span>
+        <input name="source_url" type="url" required maxlength="500" placeholder="https://" inputmode="url" />
+      </label>
+      {sections.length > 0 && (
+        <label>
+          <span class="l">Category <span class="opt">(optional)</span></span>
+          <select name="category">
+            <option value="">Not sure</option>
+            {sections.map((s) => (
+              <optgroup label={s.name}>
+                {s.children.map((c) => <option value={c.slug} selected={c.slug === category}>{c.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        <span class="l">Anything else we should know? <span class="opt">(optional)</span></span>
+        <textarea name="details" rows="3" maxlength="1000"></textarea>
+      </label>
+      <div class="pair">
+        <label>
+          <span class="l">Your name <span class="opt">(optional)</span></span>
+          <span class="h">Shown as "Tipped by ..." if we publish it.</span>
+          <input name="name" maxlength="60" autocomplete="name" />
+        </label>
+        <label>
+          <span class="l">Email <span class="opt">(optional)</span></span>
+          <span class="h">Only used if we have a question about your tip.</span>
+          <input name="email" type="email" maxlength="200" autocomplete="email" />
+        </label>
+      </div>
+      <label class="hp" aria-hidden="true">
+        <span>Leave this field empty</span>
+        <input type="text" name="website" tabindex="-1" autocomplete="off" />
+      </label>
+      <div class="cf-turnstile" data-sitekey={turnstileSiteKey}></div>
+      <button type="submit">Send tip</button>
+      <p class="tip-status" role="status" aria-live="polite"></p>
+    </form>
+
+    <aside class="how" aria-labelledby="how-h">
+      <h2 id="how-h">How it works</h2>
+      <ol>
+        <li><strong>You send the link.</strong> One story or official page is enough.</li>
+        <li><strong>We check it.</strong> Every tip is checked against its source and other reports.</li>
+        <li><strong>It goes live.</strong> If it holds up, the record is published or updated, with your name on it.</li>
+      </ol>
+      <h2>What counts</h2>
+      <p>
+        World records and officially recognized records that a news outlet, a governing body or Guinness World Records has
+        reported. Personal bests, school records and attempts that fell short don't count.
+      </p>
+      <p class="fine">Found a mistake on a record page? Use the "Spotted something out of date?" form on that page.</p>
+    </aside>
+  </div>
+</Base>
+
+<script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>(".tip-form")!;
+  const status = form.querySelector<HTMLParagraphElement>(".tip-status")!;
+  const button = form.querySelector<HTMLButtonElement>("button")!;
+  const turnstile = () => (window as unknown as { turnstile?: { reset: () => void } }).turnstile;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const val = (k: string) => String(fd.get(k) ?? "").trim();
+    const payload = {
+      what: val("what"),
+      source_url: val("source_url"),
+      category: val("category"),
+      details: val("details"),
+      name: val("name"),
+      email: val("email"),
+      website: val("website"),
+      turnstile_token: val("cf-turnstile-response"),
+    };
+    if (payload.what.length < 5) { status.textContent = "Tell us which record, in a few words."; return; }
+    if (!/^https?:\/\/\S+\.\S+/.test(payload.source_url)) { status.textContent = "Add the link to where it was reported, starting with https://"; return; }
+    if (!payload.turnstile_token) { status.textContent = "Please wait for the check to finish, then send again."; return; }
+
+    button.disabled = true;
+    status.textContent = "Sending...";
+    try {
+      const res = await fetch(form.dataset.endpoint!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        form.reset();
+        turnstile()?.reset();
+        status.textContent = "Thanks! We'll check it against the source. If it holds up, it goes live with your name on it.";
+        button.disabled = false;
+      } else {
+        status.textContent = data.error ?? "Something went wrong. Email info@brokenrecords.com instead.";
+        turnstile()?.reset();
+        button.disabled = false;
+      }
+    } catch {
+      status.textContent = "Could not reach the server. Try again, or email info@brokenrecords.com.";
+      button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .tip-hero { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+  .tip-hero h1 { color: #fff; max-width: 26ch; }
+  .lede { max-width: 56ch; font-size: 1.15rem; margin: 0.9rem 0 0; }
+  .tip-grid { display: grid; gap: 2.5rem; padding-top: 2rem; grid-template-columns: minmax(0, 1fr); max-width: 72rem; }
+  @media (min-width: 60rem) { .tip-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+  .tip-form { display: grid; gap: 1.1rem; align-content: start; }
+  .tip-form label { display: grid; gap: 0.3rem; }
+  .l { font: 700 1rem/1.3 var(--display); }
+  .opt { font-weight: 500; color: var(--ink-soft); }
+  .h { font-size: 0.88rem; color: var(--ink-soft); line-height: 1.35; }
+  .tip-form input, .tip-form textarea, .tip-form select {
+    font: inherit; font-size: 1rem; padding: 0.65rem 0.75rem; border: 1px solid var(--rule); border-radius: 6px;
+    width: 100%; background: var(--paper); color: var(--ink);
+  }
+  .tip-form input:focus, .tip-form textarea:focus, .tip-form select:focus { outline: 3px solid var(--amber); outline-offset: 1px; }
+  .pair { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+  .tip-form button {
+    justify-self: start; font: 800 1.05rem/1 var(--display); padding: 0.85rem 1.5rem; border: 0; border-radius: 6px;
+    background: var(--amber); color: #000; cursor: pointer;
+  }
+  .tip-form button:disabled { opacity: 0.6; cursor: default; }
+  .tip-status { margin: 0; min-height: 1.4em; font-weight: 600; }
+  .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .how { border-top: 2px solid var(--ink); padding-top: 1rem; }
+  .how h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+  .how h2 + p, .how ol + h2 { margin-top: 1.4rem; }
+  .how ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.6rem; }
+  .how p { margin: 0.5rem 0 0; }
+  .how .fine { font-size: 0.9rem; color: var(--ink-soft); margin-top: 1rem; }
+</style>

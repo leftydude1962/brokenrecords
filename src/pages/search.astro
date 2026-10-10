@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import { getSearchIndex, logSearchMiss, cacheFor } from "../lib/data";
 import { search, tokens } from "../lib/search";
+import TipPrompt from "../components/TipPrompt.astro";
 
 // Full results page. Works without JavaScript and can be shared as a link.
 const q = (Astro.url.searchParams.get("q") ?? "").trim().slice(0, 100);
@@ -48,11 +49,13 @@ const title = hasQuery ? `Search: ${q} | Broken Records` : "Search records | Bro
               </li>
             ))}
           </ol>
+          <TipPrompt text="Not finding the record you want?" what={q} />
         </>
       ) : (
         <div class="none">
           <p>We don't have a record for “{q}” yet. We've noted the search, and the most-wanted records get added first.</p>
           <p>Try a shorter search, or browse <a href="/category">all categories</a>.</p>
+          <TipPrompt variant="band" what={q} />
         </div>
       )
     )}

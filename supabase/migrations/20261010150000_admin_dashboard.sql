@@ -73,7 +73,10 @@ select jsonb_build_object(
                          and coalesce(claude_json->>'triage', 'new_holder') <> 'figure_update'),
     'recheck_figures', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'recheck'
                          and claude_json->>'triage' = 'figure_update'),
-    'drafts', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'draft'),
+    'drafts', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'draft'
+                 and coalesce(claude_json->>'source', '') <> 'tip'),
+    'tips', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'draft'
+               and claude_json->>'source' = 'tip'),
     'news', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' is null)
   ),
   'daily', (select jsonb_agg(to_jsonb(daily) order by d) from daily),
