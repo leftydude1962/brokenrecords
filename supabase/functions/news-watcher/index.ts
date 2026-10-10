@@ -6,8 +6,11 @@
 //   2. It beats the current value in the right direction.
 //   3. It is within 25% of the current value (catches unit and parsing mistakes).
 //   4. At least one news site among the actual search citations backs it.
+//   5. It is not the current record reported again (same holder, under 0.5% apart,
+//      dates within 14 days), which is how rounding in a lb/kg conversion looks.
 // A record we do not track yet is added as a new record when it has a real category, a
-// numeric value, a title we do not already have, and at least one cited news site.
+// numeric value, a title we do not already have (and not the same holder and figure as a
+// record in that category under another title), and at least one cited news site.
 // Everything else waits in the candidates table for review.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -66,6 +69,21 @@ function site(url: string): string | null {
     const twoPartTld = /^(co|com|org|net|gov|ac)\.[a-z]{2}$/.test(p.slice(-2).join("."));
     return p.slice(twoPartTld ? -3 : -2).join(".");
   } catch { return null; }
+}
+
+// Lower case, letters and digits only: "Ian Paton" and "ian  paton." compare equal.
+function norm(s: string | null | undefined): string {
+  return (s ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// True when a report is the current record again: same holder, under 0.5% apart,
+// and dates within 14 days of each other (or a date missing).
+function sameFeat(rec: Rec, it: Item, oldV: number | null): boolean {
+  if (oldV == null || oldV === 0 || !norm(rec.holder) || norm(rec.holder) !== norm(it.holder)) return false;
+  if (Math.abs(it.value_numeric - oldV) / Math.abs(oldV) >= 0.005) return false;
+  if (!rec.achieved_on || !it.achieved_on) return true;
+  const days = Math.abs(Date.parse(it.achieved_on) - Date.parse(rec.achieved_on)) / 86_400_000;
+  return !(days > 14);
 }
 
 function beats(newV: number, oldV: number, dir: string | null) {
@@ -172,8 +190,11 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
     independent_sites: sites.size,
     has_source: sites.size >= 1,
   };
-  const pass = checks.matched_record && checks.same_unit && checks.beats_current && checks.within_25_percent && checks.has_source;
-  const summary = { title: it.title, holder: it.holder, value: `${it.value_numeric} ${it.unit}`, checks, pass };
+  // Same holder, about the same figure, about the same date: one feat reported two ways
+  // (e.g. 1,295.8 kg vs "2,856.8 lb, about 1,296.5 kg"). Not a new record.
+  const same_feat = !!rec && sameFeat(rec, it, oldV);
+  const pass = checks.matched_record && checks.same_unit && checks.beats_current && checks.within_25_percent && checks.has_source && !same_feat;
+  const summary = { title: it.title, holder: it.holder, value: `${it.value_numeric} ${it.unit}`, checks: { ...checks, same_feat }, pass };
   if (dryRun) return summary;
 
   // Skip claims we have already queued or published.
@@ -181,11 +202,16 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
   dupQ = rec ? dupQ.eq("record_id", rec.id) : dupQ.is("record_id", null).eq("category_guess", it.category_slug);
   const { data: dup } = await dupQ;
   if (dup?.length) return { ...summary, status: "already_seen" };
-  if (rec && oldV === it.value_numeric) return { ...summary, status: "unchanged" };
+  if (rec && (oldV === it.value_numeric || same_feat)) return { ...summary, status: "unchanged" };
 
   // A record we don't track yet becomes a new record, if it is complete and not a duplicate title.
   const slug = it.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
-  const titleTaken = [...bySlug.values()].some((r) => r.title.toLowerCase() === it.title.trim().toLowerCase()) || bySlug.has(slug);
+  // A differently worded title for a record we already have (same category, holder and figure) is taken too.
+  const titleTaken = [...bySlug.values()].some((r) =>
+    r.title.toLowerCase() === it.title.trim().toLowerCase() ||
+    (r.category_id === catId.get(it.category_slug) && r.value_numeric != null && Number(r.value_numeric) === it.value_numeric &&
+      norm(r.holder) !== "" && norm(r.holder) === norm(it.holder))
+  ) || bySlug.has(slug);
   const isNew = !rec && AUTO_PUBLISH && checks.has_source && catId.has(it.category_slug) && Number.isFinite(it.value_numeric)
     && !!it.title?.trim() && !!it.holder?.trim() && !!it.unit?.trim() && !!slug && !titleTaken;
 
