@@ -412,18 +412,42 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     let reviewCats = [];
     const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
-    // "9 hours 55 minutes 43 seconds" -> 35743 when the unit is seconds; "626.01 m" -> 626.01.
+    // Guesses the numeric value, in the record's unit, from the figure as shown.
+    // "9 hours 55 minutes 43 seconds" -> 35743 (s), "4:54.332" -> 294.332 (s), "$1.35 billion" -> 1350000000,
+    // "64.3 mph (103.5 km/h)" -> 103.5 (km/h), "12.24 tonnes" -> 12240 (kg), "6,695 km" -> 6695000 (m).
     function guessNumber(text, unit) {
       const t = String(text || "").toLowerCase().replace(/,/g, "");
+      const NUM = "(-?\\d+(?:\\.\\d+)?)\\s*(thousand|million|billion|trillion)?\\s*";
+      const scale = (w) => ({ thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 })[w] || 1;
+      const find = (unitRe, factor = 1) => {
+        const m = t.match(new RegExp(NUM + unitRe + "(?![a-z/²0-9])"));
+        return m ? Math.round(Number(m[1]) * scale(m[2]) * factor * 1e6) / 1e6 : null;
+      };
       if (unit === "s") {
-        const clock = t.match(/^(\d+):(\d{2})(?::(\d{2}(?:\.\d+)?))?/);
-        if (clock) return clock[3] != null ? +clock[1] * 3600 + +clock[2] * 60 + +clock[3] : +clock[1] * 60 + +clock[2];
+        const clock = t.match(/(\d+):(\d{2}(?:\.\d+)?)(?::(\d{2}(?:\.\d+)?))?/);
+        if (clock) return clock[3] != null ? +clock[1] * 3600 + +clock[2] * 60 + +clock[3] : Math.round((+clock[1] * 60 + +clock[2]) * 1000) / 1000;
         const part = (re) => Number(t.match(re)?.[1] || 0);
         const h = part(/([\d.]+)\s*(?:h|hours?|hrs?)\b/), m = part(/([\d.]+)\s*(?:m|min|minutes?)\b/), s = part(/([\d.]+)\s*(?:s|sec|seconds?)\b/);
-        if (h || m || s) return Math.round((h * 3600 + m * 60 + s) * 100) / 100;
+        if (h || m || s) return Math.round((h * 3600 + m * 60 + s) * 1000) / 1000;
       }
-      const n = t.match(/-?\d+(?:\.\d+)?/);
-      return n ? Number(n[0]) : "";
+      // Each unit: [pattern for that unit, factor], then other units it can be converted from.
+      const CONVERT = {
+        "km/h": [["km\\/h|kph|kilomet(?:er|re)s per hour", 1], ["mph|miles per hour", 1.609344]],
+        "m": [["m|met(?:er|re)s?", 1], ["km|kilomet(?:er|re)s?", 1000], ["cm|centimet(?:er|re)s?", 0.01], ["ft|feet", 0.3048]],
+        "km": [["km|kilomet(?:er|re)s?", 1], ["miles?|mi", 1.609344]],
+        "kg": [["kg|kilograms?", 1], ["tonnes?|metric tons?", 1000], ["g|grams?", 0.001], ["lbs?|pounds?", 0.45359237]],
+        "km2": [["km²|km2|sq km|square kilomet(?:er|re)s?", 1], ["sq mi|square miles?", 2.589988]],
+        "m2": [["m²|m2|sq m|square met(?:er|re)s?", 1], ["sq ft|square feet", 0.092903]],
+        "°C": [["°c|degrees celsius", 1]],
+        "cm": [["cm", 1], ["mm", 0.1], ["in|inches", 2.54]],
+        "mm": [["mm", 1], ["cm", 10], ["in|inches", 25.4]],
+      }[unit];
+      for (const [re, factor] of CONVERT || []) {
+        const v = find("(?:" + re + ")", factor);
+        if (v != null) return v;
+      }
+      const n = t.match(new RegExp(NUM));
+      return n ? Number(n[1]) * scale(n[2]) : "";
     }
 
     // Finds a date like "28 May 2026", "May 28, 2026" or "2026-05-28" in a note.

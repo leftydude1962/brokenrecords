@@ -361,6 +361,20 @@ function recordFields(raw: unknown) {
   };
 }
 
+// Research sometimes returns a placeholder instead of a holder ("Unknown", "No reliable holder found").
+// Those must never go live.
+const PLACEHOLDER = /^((unknown|n\/a|none|tbd|unclear)\b|not (established|known|found|available)\b|no (reliabl|verifi|current|known|clear))/i;
+function checkReal(f: { holder: string | null; value_text: string | null }) {
+  if (f.holder && PLACEHOLDER.test(f.holder)) throw new Error(`"${f.holder}" is not a real holder. Reject this one.`);
+  if (f.value_text && PLACEHOLDER.test(f.value_text)) throw new Error(`"${f.value_text}" is not a real figure. Reject this one.`);
+}
+
+// Stops a second copy of a record we already have ("heaviest-pumpkin-2").
+async function checkNotDuplicate(sb: SupabaseClient, base: string) {
+  const { data } = await sb.from("records").select("slug,title").eq("slug", base).eq("status", "published").maybeSingle();
+  if (data) throw new Error(`We already have "${data.title}" (/records/${data.slug}). Reject this, or update that record instead.`);
+}
+
 async function tipSources(sb: SupabaseClient, recordId: string, urls: string[]) {
   const rows = [...new Set(urls)].filter((u) => /^https?:\/\//.test(u)).slice(0, 5)
     .map((u) => ({ record_id: recordId, url: u, publisher: site(u), license: null }));
@@ -376,11 +390,13 @@ async function tipPublish(sb: SupabaseClient, id: string, raw: unknown, credit: 
   if (!f.title) throw new Error("Enter a title.");
   if (!f.holder) throw new Error("Enter the holder.");
   if (!f.value_text && f.value_numeric == null) throw new Error("Enter the figure.");
+  checkReal(f);
   const { data: cat } = await sb.from("categories").select("id").eq("slug", f.category_slug ?? "").maybeSingle();
   if (!cat) throw new Error("Pick a category.");
 
   // A unique address made from the title: "heaviest-pumpkin", then "heaviest-pumpkin-2" and so on.
   const base = f.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
+  await checkNotDuplicate(sb, base);
   let slug = base;
   for (let i = 2; i < 50; i++) {
     const { data: taken } = await sb.from("records").select("id").eq("slug", slug).maybeSingle();
@@ -501,6 +517,7 @@ async function reviewApply(sb: SupabaseClient, id: string, mode: string, raw: un
   const f = recordFields(raw);
   if (!f.holder) throw new Error("Enter the holder.");
   if (!f.value_text && f.value_numeric == null) throw new Error("Enter the figure.");
+  checkReal(f);
   const now = new Date().toISOString();
   const urls = (c.source_urls ?? []).filter((u) => /^https?:\/\//.test(u));
   let slug: string;
@@ -510,6 +527,7 @@ async function reviewApply(sb: SupabaseClient, id: string, mode: string, raw: un
     const { data: cat } = await sb.from("categories").select("id").eq("slug", f.category_slug ?? "").maybeSingle();
     if (!cat) throw new Error("Pick a category.");
     const base = f.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
+    await checkNotDuplicate(sb, base);
     slug = base;
     for (let i = 2; i < 50; i++) {
       const { data: taken } = await sb.from("records").select("id").eq("slug", slug).maybeSingle();
