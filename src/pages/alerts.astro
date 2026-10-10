@@ -1,0 +1,112 @@
+---
+// Record alerts: sign up, and the landing page for the confirm and unsubscribe links in emails.
+//   /alerts                    signup page
+//   /alerts?confirm=TOKEN      confirms the address (link in the confirm email)
+//   /alerts?unsubscribe=TOKEN  asks "Unsubscribe?" with a button (link at the bottom of every email).
+//                              The button POSTs back here. Opening the link alone changes nothing,
+//                              because email security scanners open every link in an email.
+// The token is checked by the subscribe edge function. Pages with a token are never cached.
+import Base from "../layouts/Base.astro";
+import AlertSignup from "../components/AlertSignup.astro";
+import { getLatest } from "../lib/latest";
+import { cacheFor } from "../lib/data";
+
+const FN = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/subscribe";
+const confirm = Astro.url.searchParams.get("confirm");
+const isPost = Astro.request.method === "POST";
+const unsub = isPost ? String((await Astro.request.formData().catch(() => null))?.get("t") ?? "") : null;
+const askUnsub = !isPost ? Astro.url.searchParams.get("unsubscribe") : null;
+let result: "confirmed" | "unsubscribed" | "invalid" | null = null;
+
+if (confirm || unsub) {
+  try {
+    const res = await fetch(FN, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: confirm ? "confirm" : "unsubscribe", token: confirm ?? unsub }),
+    });
+    const out = await res.json().catch(() => ({}));
+    result = res.ok ? (out.status === "confirmed" ? "confirmed" : "unsubscribed") : "invalid";
+  } catch {
+    result = "invalid";
+  }
+  Astro.response.headers.set("Cache-Control", "no-store");
+} else if (askUnsub) {
+  Astro.response.headers.set("Cache-Control", "no-store");
+} else {
+  cacheFor(600, Astro.response);
+}
+
+// A taste of what the email looks like: the latest broken and new records.
+const sample = result || askUnsub ? [] : (await getLatest(4)).slice(0, 4);
+---
+<Base
+  title="World record alerts by email | Broken Records"
+  description="One email a week with the world records that were broken or newly set, each with its sources."
+  noindex={!!result || !!askUnsub}
+>
+  <section class="band al-hero">
+    <div class="wrap">
+      {result === "confirmed" && (<><h1>You're in.</h1><p class="lede muted">Your first weekly email arrives next Monday. Until then, see <a href="/latest">what fell lately</a>.</p></>)}
+      {result === "unsubscribed" && (<><h1>You're unsubscribed.</h1><p class="lede muted">You won't get record alerts anymore. Changed your mind? Sign up again below.</p></>)}
+      {result === "invalid" && (<><h1>That link didn't work.</h1><p class="lede muted">It may be old or incomplete. Sign up again below, or email <a href="mailto:info@brokenrecords.com">info@brokenrecords.com</a>.</p></>)}
+      {!result && askUnsub && (
+        <>
+          <h1>Unsubscribe from record alerts?</h1>
+          <form method="post" action="/alerts" class="unsub-form">
+            <input type="hidden" name="t" value={askUnsub} />
+            <button type="submit">Yes, unsubscribe me</button>
+          </form>
+        </>
+      )}
+      {!result && !askUnsub && (<><h1>World records, in your inbox.</h1><p class="lede muted">Every Monday: the records that were broken or newly set that week, with the old holder, the new mark and the sources.</p></>)}
+    </div>
+  </section>
+
+  <div class="wrap al-body">
+    {result !== "confirmed" && !askUnsub && <AlertSignup source="alerts" heading="Get the week's broken records" />}
+
+    {sample.length > 0 && (
+      <section class="sample" aria-labelledby="sample-h">
+        <h2 id="sample-h">Recently in the email</h2>
+        <ul>
+          {sample.map((s) => (
+            <li>
+              <span class={`tag ${s.is_broken ? "b" : "n"}`}>{s.is_broken ? "Record broken" : "New record"}</span>
+              <a href={`/records/${s.slug}`}>{s.title}</a>
+              <span class="m">{[s.holder, s.display_value].filter(Boolean).join(" · ")}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    <section class="faq">
+      <h2>The fine print</h2>
+      <p><strong>How often?</strong> Once a week, on Monday. No email in a week when nothing changed.</p>
+      <p><strong>What do you do with my email?</strong> We use it only to send these alerts. We don't sell or share it. See the <a href="/privacy">privacy policy</a>.</p>
+      <p><strong>How do I stop?</strong> Every email has a one-click unsubscribe link.</p>
+    </section>
+  </div>
+</Base>
+
+<style>
+  .al-hero { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+  .al-hero h1 { color: #fff; max-width: 24ch; }
+  .lede { max-width: 56ch; font-size: 1.15rem; margin: 0.9rem 0 0; }
+  .unsub-form { margin-top: 1.2rem; }
+  .unsub-form button { font: 800 1.05rem/1 var(--display); padding: 0.85rem 1.4rem; border: 0; border-radius: 6px; background: var(--amber); color: #000; cursor: pointer; }
+  .al-body { max-width: 60rem; }
+  .sample { margin-top: 2.5rem; }
+  .sample h2, .faq h2 { font-size: 1.2rem; margin-bottom: 0.6rem; }
+  .sample ul { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
+  .sample li { display: grid; gap: 0.15rem; padding: 0.75rem 0; border-bottom: 1px solid var(--rule); }
+  .sample a { font: 800 1.1rem/1.25 var(--display); color: var(--ink); text-decoration: none; }
+  .sample a:hover { text-decoration: underline; }
+  .sample .m { color: var(--ink-soft); font-size: 0.95rem; }
+  .tag { font: 700 0.72rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+  .tag.b { color: var(--red); }
+  .tag.n { color: var(--ink-soft); }
+  .faq { margin-top: 2.5rem; max-width: 46rem; }
+  .faq p { margin: 0 0 0.7rem; }
+</style>

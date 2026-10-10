@@ -1,0 +1,115 @@
+---
+// "Get record alerts" email signup. Posts to the subscribe edge function.
+// variant "band": a wide panel (home, /alerts, /latest). "compact": a smaller box (record and category pages).
+// source/detail say where the signup came from (home, record, category...), for the dashboard.
+// The bot check (Turnstile) runs invisibly and only shows a box if Cloudflare is unsure.
+type Props = { variant?: "band" | "compact"; source: string; detail?: string; heading?: string; text?: string; dark?: boolean };
+const { variant = "band", source, detail, heading, text, dark = false } = Astro.props as Props;
+const endpoint = "https://ccwmynoumrqpvnmpcgch.supabase.co/functions/v1/subscribe";
+const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
+const h = heading ?? "Get the week's broken records";
+const t = text ?? "One email a week with the world records that fell, each with its sources. No spam. Unsubscribe with one click.";
+---
+<section class:list={["alerts", variant, { dark }]} aria-label="Record alerts by email">
+  <div class="alerts-text">
+    <h2>{h}</h2>
+    <p>{t}</p>
+  </div>
+  <form class="alerts-form" data-endpoint={endpoint} data-source={source} data-detail={detail ?? ""} novalidate>
+    <div class="row">
+      <label class="sr-only" for={`alerts-email-${source}`}>Email address</label>
+      <input id={`alerts-email-${source}`} name="email" type="email" required maxlength="200" autocomplete="email" placeholder="you@example.com" />
+      <button type="submit">Get alerts</button>
+    </div>
+    <label class="hp" aria-hidden="true"><span>Leave this field empty</span><input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+    <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-appearance="interaction-only" data-size="flexible"></div>
+    <p class="alerts-status" role="status" aria-live="polite"></p>
+  </form>
+</section>
+
+<script>
+  // Load Turnstile once per page, even when another form on the page already loads it.
+  if (!document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]')) {
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    s.async = true;
+    document.head.appendChild(s);
+  }
+
+  document.querySelectorAll<HTMLFormElement>(".alerts-form").forEach((form) => {
+    const status = form.querySelector<HTMLParagraphElement>(".alerts-status")!;
+    const button = form.querySelector<HTMLButtonElement>("button")!;
+    const tokenOf = () => String(new FormData(form).get("cf-turnstile-response") ?? "");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const email = String(fd.get("email") ?? "").trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { status.textContent = "Enter a valid email address."; return; }
+      button.disabled = true;
+      status.textContent = "One moment...";
+      // The invisible check usually finishes in a second or two. Wait up to 8 seconds for it.
+      let token = tokenOf();
+      for (let i = 0; !token && i < 16; i++) { await new Promise((r) => setTimeout(r, 500)); token = tokenOf(); }
+      if (!token) { status.textContent = "Please complete the check above, then try again."; button.disabled = false; return; }
+      try {
+        const res = await fetch(form.dataset.endpoint!, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "subscribe", email, source: form.dataset.source, source_detail: form.dataset.detail,
+            website: String(fd.get("website") ?? ""), turnstile_token: token,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        (window as unknown as { turnstile?: { reset: (el?: Element) => void } }).turnstile?.reset(form.querySelector(".cf-turnstile") ?? undefined);
+        if (res.ok) {
+          form.reset();
+          status.textContent = "Almost done. Check your inbox and click the link to confirm.";
+        } else {
+          status.textContent = data.error ?? "Something went wrong. Try again in a minute.";
+          button.disabled = false;
+        }
+      } catch {
+        status.textContent = "Could not reach the server. Try again in a minute.";
+        button.disabled = false;
+      }
+    });
+  });
+</script>
+
+<style>
+  .alerts { border-radius: 10px; }
+  .alerts h2 { font-size: 1.45rem; }
+  .alerts p { margin: 0.4rem 0 0; }
+  .alerts.band {
+    display: grid; gap: 1rem 2rem; align-items: center; margin-top: 2.5rem; padding: 1.5rem;
+    background: var(--amber); color: #111;
+  }
+  .alerts > * { min-width: 0; }
+  @media (min-width: 52rem) { .alerts.band { grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); } }
+  .alerts.band h2 { color: #111; }
+  .alerts.band .alerts-text p { color: #2a2a2a; max-width: 54ch; font-size: 1rem; }
+  .alerts.compact { margin-top: 2rem; padding: 1.1rem 1.2rem; border: 2px solid var(--amber); }
+  .alerts.compact h2 { font-size: 1.15rem; }
+  .alerts.compact .alerts-text p { font-size: 0.95rem; color: var(--ink-soft); }
+  .alerts.compact .alerts-form { margin-top: 0.8rem; max-width: 30rem; }
+  .alerts.dark.compact .alerts-text p { color: #a9b6c2; }
+  .alerts.dark.compact h2 { color: #fff; }
+  .row { display: flex; gap: 0.5rem; }
+  .row input {
+    flex: 1; min-width: 0; width: 100%; font: inherit; font-size: 1rem; padding: 0.7rem 0.8rem; border-radius: 6px;
+    border: 1px solid #b9c1c8; background: #fff; color: #111;
+  }
+  .row button {
+    font: 800 1rem/1 var(--display); padding: 0 1.1rem; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap;
+    background: #111; color: #fff;
+  }
+  .alerts.compact .row button { background: var(--amber); color: #000; }
+  .row button:disabled { opacity: 0.6; cursor: default; }
+  .alerts-status { margin: 0.5rem 0 0; font-size: 0.95rem; font-weight: 600; }
+  .alerts-status:empty { display: none; }
+  .alerts.dark .alerts-status { color: #fff; }
+  .cf-turnstile:not(:empty) { margin-top: 0.5rem; }
+  .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+</style>

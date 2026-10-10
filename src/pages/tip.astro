@@ -68,10 +68,14 @@ const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
         </label>
         <label>
           <span class="l">Email <span class="opt">(optional)</span></span>
-          <span class="h">Only used if we have a question about your tip.</span>
+          <span class="h">We'll email you when your tip goes live.</span>
           <input name="email" type="email" maxlength="200" autocomplete="email" />
         </label>
       </div>
+      <label class="check">
+        <input type="checkbox" name="subscribe" />
+        <span>Also send me the weekly email of broken records (needs your email above)</span>
+      </label>
       <label class="hp" aria-hidden="true">
         <span>Leave this field empty</span>
         <input type="text" name="website" tabindex="-1" autocomplete="off" />
@@ -118,6 +122,7 @@ const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
       name: val("name"),
       email: val("email"),
       website: val("website"),
+      subscribe: fd.get("subscribe") === "on",
       turnstile_token: val("cf-turnstile-response"),
     };
     if (payload.what.length < 5) { status.textContent = "Tell us which record, in a few words."; return; }
@@ -136,7 +141,8 @@ const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
       if (res.ok) {
         form.reset();
         turnstile()?.reset();
-        status.textContent = "Thanks! We'll check it against the source. If it holds up, it goes live with your name on it.";
+        status.textContent = "Thanks! We'll check it against the source. If it holds up, it goes live with your name on it." +
+          (payload.subscribe && payload.email ? " Check your inbox for a link to confirm the weekly email." : "");
         button.disabled = false;
       } else {
         status.textContent = data.error ?? "Something went wrong. Email info@brokenrecords.com instead.";
@@ -173,6 +179,8 @@ const turnstileSiteKey = "0x4AAAAAAFR7bAKna2hC0BGD";
   }
   .tip-form button:disabled { opacity: 0.6; cursor: default; }
   .tip-status { margin: 0; min-height: 1.4em; font-weight: 600; }
+  .tip-form label.check { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.95rem; }
+  .tip-form label.check input { width: auto; margin-top: 0.3rem; }
   .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
   .how { border-top: 2px solid var(--ink); padding-top: 1rem; }
   .how h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }

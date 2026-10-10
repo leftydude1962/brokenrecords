@@ -44,6 +44,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
         <SiteSearch />
         <nav aria-label="Main">
           <a href="/category">Categories</a>
+          <a href="/alerts">Get alerts</a>
           <a class="tip-btn" href="/tip">Tip a record</a>
         </nav>
       </div>
@@ -57,7 +58,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
           Broken Records tracks recognized world records and links every entry to its sources.
           We are not an official certifying body.
         </p>
-        <p><strong>Saw a record fall?</strong> <a href="/tip">Tip us off</a> and get credit when it goes live.</p>
+        <p><strong>Saw a record fall?</strong> <a href="/tip">Tip us off</a> and get credit when it goes live.
+          <strong>Want them in your inbox?</strong> <a href="/alerts">Get the weekly email</a>.</p>
         <p class="fine">Record data from Wikidata (CC0) and the sources listed on each page.</p>
         <p class="fine">A brand of <a href="https://mohrcreativegroup.com" rel="noopener">Mohr Creative Group</a> · <a href="/privacy">Privacy</a></p>
       </div>

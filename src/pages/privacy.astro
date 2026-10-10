@@ -5,13 +5,19 @@ import Base from "../layouts/Base.astro";
   <div class="wrap">
     <article class="doc">
       <h1>Privacy policy</h1>
-      <p class="muted">Last updated October 7, 2026</p>
+      <p class="muted">Last updated October 10, 2026</p>
 
       <h2>Who we are</h2>
       <p>Broken Records (brokenrecords.com) is a website about world records. It is a brand of Mohr Creative Group LLC.</p>
 
       <h2>What we collect</h2>
-      <p>You can read the site without an account. We do not ask for your name, email or payment details. Our hosting provider (Cloudflare) keeps standard server logs, such as IP address, browser type and pages visited, to run and protect the site.</p>
+      <p>You can read the site without an account. Our hosting provider (Cloudflare) keeps standard server logs, such as IP address, browser type and pages visited, to run and protect the site.</p>
+      <p>We collect your email address only if you give it to us:</p>
+      <ul>
+        <li><strong>Record alerts.</strong> If you sign up, we store your email, when you signed up and confirmed, and which page you signed up on. We use it only to send the weekly record alerts. Every email has a one-click unsubscribe link.</li>
+        <li><strong>Tips and corrections.</strong> If you send a tip or a correction, we store what you wrote, the link you gave, and your name and email if you added them. We use your email to tell you when your tip goes live or to ask about it. If you give a name and we publish your tip, we show "Tipped off by" and that name on the record page.</li>
+      </ul>
+      <p>To stop spam, the forms use Cloudflare Turnstile, and we store a one-way scrambled form of your IP address (a hash) for a rate limit, never the address itself. We do not sell or share email addresses. Emails are sent through our email provider, Resend.</p>
 
       <h2>Cookies</h2>
       <p>The site does not set advertising or tracking cookies.</p>
@@ -23,7 +29,7 @@ import Base from "../layouts/Base.astro";
       <p>If you email us, we use your message and address only to reply.</p>
 
       <h2>Data deletion</h2>
-      <p>We do not hold personal data about visitors. If you believe we hold information about you and want it deleted, email <a href="mailto:info@brokenrecords.com">info@brokenrecords.com</a> and we will respond within 30 days.</p>
+      <p>To delete your email or anything you sent us, email <a href="mailto:info@brokenrecords.com">info@brokenrecords.com</a> and we will respond within 30 days.</p>
 
       <h2>Contact</h2>
       <p><a href="mailto:info@brokenrecords.com">info@brokenrecords.com</a></p>
@@ -36,5 +42,7 @@ import Base from "../layouts/Base.astro";
   .doc h1 { margin-bottom: 0.4rem; }
   .doc h2 { font-size: 1.2rem; margin: 1.8rem 0 0.4rem; }
   .doc p { margin: 0 0 0.8rem; }
+  .doc ul { margin: 0 0 0.8rem; padding-left: 1.2rem; }
+  .doc li { margin-bottom: 0.5rem; }
   .muted { color: var(--ink-soft); }
 </style>

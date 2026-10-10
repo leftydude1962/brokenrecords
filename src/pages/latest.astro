@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import LatestRecords from "../components/LatestRecords.astro";
 import TipPrompt from "../components/TipPrompt.astro";
+import AlertSignup from "../components/AlertSignup.astro";
 import { getLatest } from "../lib/latest";
 import { cacheFor } from "../lib/data";
 
@@ -12,6 +13,7 @@ cacheFor(3600, Astro.response);
   <div class="wrap">
     <LatestRecords items={items} heading="Latest records" showAllLink={false} />
     {items.length === 0 && <p>Nothing new in the last 30 days. Check back tomorrow.</p>}
+    <AlertSignup source="latest" />
     <TipPrompt variant="band" />
   </div>
 </Base>

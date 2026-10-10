@@ -9,6 +9,7 @@ export const GET: APIRoute = async () => {
     { loc: `${base}/category`, lastmod: undefined },
     { loc: `${base}/latest`, lastmod: undefined },
     { loc: `${base}/tip`, lastmod: undefined },
+    { loc: `${base}/alerts`, lastmod: undefined },
     ...categories.filter((c) => (c.count ?? 0) > 0 || !c.parent_id).map((c) => ({ loc: `${base}/category/${c.slug}`, lastmod: undefined })),
     // lastmod is the last real check, or the last edit if no check has run yet. Never the sync timestamp.
     ...records.map((r) => ({ loc: `${base}/records/${r.slug}`, lastmod: (r.last_checked_at ?? r.updated_at ?? "").slice(0, 10) || undefined })),

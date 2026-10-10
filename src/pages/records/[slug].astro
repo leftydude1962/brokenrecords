@@ -5,6 +5,7 @@ import RecordCards from "../../components/RecordCards.astro";
 import Perspective from "../../components/Perspective.astro";
 import CorrectionForm from "../../components/CorrectionForm.astro";
 import TipPrompt from "../../components/TipPrompt.astro";
+import AlertSignup from "../../components/AlertSignup.astro";
 import { getRecord, getRecords, getTaxonomy, getCurrentRecord, formatValue, formatMetric, formatDate, cacheFor } from "../../lib/data";
 
 const record = await getRecord(Astro.params.slug!);
@@ -188,6 +189,10 @@ const facts = record
           <CorrectionForm slug={record.slug} />
           <TipPrompt text="Know a different record we're missing?" category={record.categories?.slug} />
         </section>
+
+        <AlertSignup variant="compact" source="record" detail={record.slug}
+          heading="Get an email when records fall"
+          text="Every Monday: the world records that were broken or newly set that week. Unsubscribe any time." />
 
         {related.length > 0 && record.categories && (
           <section class="related" aria-labelledby="rel">

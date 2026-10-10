@@ -39,6 +39,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
             <div class="tile"><span class="n" id="t-broken"></span><span class="l">Records broken today</span></div>
             <div class="tile"><span class="n" id="t-live"></span><span class="l">Live records</span></div>
             <div class="tile"><span class="n" id="t-wait"></span><span class="l">Waiting for review</span></div>
+            <div class="tile"><span class="n" id="t-subs"></span><span class="l">Email subscribers</span></div>
           </div>
 
           <h2>Found today by the news check</h2>
@@ -54,6 +55,16 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
               <tbody id="daily-rows"></tbody>
             </table>
           </details>
+
+          <h2>Audience</h2>
+          <div class="cols">
+            <ul class="kv" id="audience"></ul>
+            <div>
+              <p class="hint">Your list belongs to you. Download it any time for a backup or to move it to another service.</p>
+              <button type="button" id="export-subs">Download subscribers (CSV)</button>
+              <p id="export-status" role="status"></p>
+            </div>
+          </div>
 
           <div class="cols">
             <div>
@@ -183,6 +194,16 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
         $("t-new").textContent = live;
         $("t-broken").textContent = today.broken ?? 0;
         $("t-live").textContent = t.published.toLocaleString();
+        const a = d.audience || {};
+        $("t-subs").textContent = (a.confirmed ?? 0).toLocaleString();
+        $("audience").innerHTML = kv([
+          ["Confirmed subscribers", (a.confirmed ?? 0).toLocaleString()],
+          ["New this week", a.new_7d ?? 0],
+          ["Signed up, not confirmed yet", a.pending ?? 0],
+          ["Unsubscribed", a.unsubscribed ?? 0],
+          ["Tips received / published", `${a.tips_total ?? 0} / ${a.tips_live ?? 0}`],
+          ["Last weekly email", a.last_digest ? `${esc(fmtDay(String(a.last_digest.sent_at).slice(0, 10), { month: "short", day: "numeric" }))}, ${a.last_digest.recipients} sent` : "Not sent yet"],
+        ]);
         $("t-wait").textContent = ((q.tips ?? 0) + q.corrections + q.news + q.recheck_breaks + q.recheck_figures).toLocaleString();
 
         $("finds").innerHTML = d.today_news.length
@@ -334,6 +355,22 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       } catch (err) {
         status.textContent = err.message;
         buttons.forEach((b) => (b.disabled = false));
+      }
+    });
+
+    $("export-subs").addEventListener("click", async () => {
+      $("export-status").textContent = "Preparing...";
+      try {
+        const { csv, count } = await call({ action: "subscribers_csv" });
+        const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `brokenrecords-subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        $("export-status").textContent = `${count} rows downloaded.`;
+      } catch (e) {
+        $("export-status").textContent = e.message;
       }
     });
 

@@ -9,6 +9,8 @@
 //   what      the record in the visitor's words, 5 to 200 characters
 //   name      optional, shown as "Tipped by <name>" if the tip is published
 //   website   hidden honeypot field. Real visitors leave it empty. Bots often fill it in.
+//   subscribe true when the visitor ticked "Also send me the weekly email". With an email, the
+//             address is added to subscribers as pending; mail-jobs sends the confirm email.
 // Rate limit: at most 5 tips per IP hash in 10 minutes. The raw IP is never stored.
 // Public endpoint (verify_jwt = false). CORS allows only the site origin.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -136,6 +138,16 @@ Deno.serve(async (req) => {
     status: "pending",
   });
   if (error) return json({ error: "Something went wrong. Try again later." }, 500, origin);
+
+  // Optional signup for the weekly email. Double opt-in still applies: they must click the confirm link.
+  if (body.subscribe === true && email) {
+    const lower = email.toLowerCase();
+    const { data: sub } = await sb.from("subscribers").select("id,status").eq("email", lower).maybeSingle();
+    if (!sub) await sb.from("subscribers").insert({ email: lower, source: "tip", ip_hash: ipHash });
+    else if (sub.status === "unsubscribed") {
+      await sb.from("subscribers").update({ status: "pending", token: crypto.randomUUID(), unsubscribed_at: null, confirm_sent_at: null, source: "tip" }).eq("id", sub.id);
+    }
+  }
 
   return json({ ok: true }, 200, origin);
 });

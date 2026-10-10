@@ -14,6 +14,7 @@
 //   { action: "tip_publish", candidate_id, fields, credit }          publish a tip as a new record
 //   { action: "tip_update", candidate_id, record_slug, fields, credit }  apply a tip to an existing record
 //   { action: "tip_reject", candidate_id }
+//   { action: "subscribers_csv" }        every subscriber as CSV text, for backup or moving lists
 //
 // Approve follows the same steps as the recheck review: the old record is saved as a
 // superseded history row, the live record is updated, and last_checked_at is set to now.
@@ -67,6 +68,21 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "tips_list") return json(await listTips(sb), 200, origin);
+    if (body.action === "subscribers_csv") {
+      const rows: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await sb.from("subscribers")
+          .select("email,status,source,source_detail,created_at,confirmed_at,unsubscribed_at,last_digest_at")
+          .order("created_at").range(from, from + 999);
+        if (error) throw new Error(error.message);
+        rows.push(...(data ?? []));
+        if (!data || data.length < 1000) break;
+      }
+      const cols = ["email", "status", "source", "source_detail", "created_at", "confirmed_at", "unsubscribed_at", "last_digest_at"];
+      const cell = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const csv = [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+      return json({ csv, count: rows.length }, 200, origin);
+    }
 
     const candidateId = typeof body.candidate_id === "string" ? body.candidate_id : "";
     if (!candidateId) return json({ error: "Missing submission." }, 400, origin);
@@ -214,6 +230,33 @@ async function loadSubmission(sb: SupabaseClient, id: string) {
 
 // ---------- Tips from the public /tip form ----------
 
+// Tells the visitor their tip went live. Best effort: a failed email never blocks the publish.
+// Needs RESEND_API_KEY; without it nothing is sent.
+async function tipLiveEmail(t: Tip, slug: string, title: string, credited: boolean) {
+  const key = Deno.env.get("RESEND_API_KEY");
+  const tip = (t.claude_json.tip ?? {}) as Record<string, string | null>;
+  if (!key || !tip.email) return;
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const url = `https://brokenrecords.com/records/${slug}?utm_source=email&utm_medium=tip_live`;
+  const hi = tip.name ? `Thanks, ${esc(tip.name)}.` : "Thanks for the tip.";
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: "Broken Records <info@brokenrecords.com>", to: [tip.email], subject: `Your tip is live: ${title}`,
+      html: `<!doctype html><html><body style="margin:0;padding:24px;background:#eceff1;font-family:Georgia,serif;color:#17212b">
+<table role="presentation" width="100%" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:8px"><tr><td style="padding:28px">
+<p style="margin:0 0 16px;font:900 22px Arial,sans-serif"><span style="color:#c98a12">Broken</span> Records</p>
+<p style="margin:0 0 12px;font-size:17px;line-height:1.5">${hi} We checked your tip against its sources, and it's now on the site:</p>
+<p style="margin:0 0 20px;font:800 19px Arial,sans-serif"><a href="${url}" style="color:#1d5c8f">${esc(title)}</a></p>
+${credited && tip.name ? `<p style="margin:0 0 16px;font-size:15px">The record page credits you as "Tipped off by ${esc(tip.name)}." Share it.</p>` : ""}
+<p style="margin:0 0 8px;font-size:15px">Want the week's broken records by email? <a href="https://brokenrecords.com/alerts" style="color:#1d5c8f">Get record alerts</a>.</p>
+</td></tr></table></body></html>`,
+      text: `${tip.name ? `Thanks, ${tip.name}.` : "Thanks for the tip."} We checked it and it's now on the site:\n${title}\n${url}`,
+    }),
+  }).catch(() => {});
+}
+
 type Tip = { id: string; category_guess: string | null; source_urls: string[] | null; claude_json: Record<string, unknown> };
 
 // "www.espn.com/x" -> "espn.com". Used as the publisher shown next to each source.
@@ -343,6 +386,7 @@ async function tipPublish(sb: SupabaseClient, id: string, raw: unknown, credit: 
     claude_json: { ...t.claude_json, applied: "new", slug, reviewed_by: reviewer, reviewed_at: now },
   }).eq("id", id);
   if (cErr) throw new Error(cErr.message);
+  await tipLiveEmail(t, slug, f.title, !!name);
   return { ok: true, slug };
 }
 
@@ -385,5 +429,6 @@ async function tipUpdate(sb: SupabaseClient, id: string, recordSlug: string, raw
     claude_json: { ...t.claude_json, applied: "update", slug: rec.slug, reviewed_by: reviewer, reviewed_at: now },
   }).eq("id", id);
   if (cErr) throw new Error(cErr.message);
+  await tipLiveEmail(t, rec.slug, rec.title, !!name);
   return { ok: true, slug: rec.slug };
 }

@@ -79,6 +79,16 @@ select jsonb_build_object(
                and claude_json->>'source' = 'tip'),
     'news', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' is null)
   ),
+  'audience', jsonb_build_object(
+    'confirmed', (select count(*) from subscribers where status = 'confirmed'),
+    'pending', (select count(*) from subscribers where status = 'pending'),
+    'unsubscribed', (select count(*) from subscribers where status = 'unsubscribed'),
+    'new_7d', (select count(*) from subscribers where status = 'confirmed' and confirmed_at > now() - interval '7 days'),
+    'tips_total', (select count(*) from candidates where claude_json->>'source' = 'tip' and coalesce(claude_json->>'test', '') <> 'true'),
+    'tips_live', (select count(*) from candidates where claude_json->>'source' = 'tip' and status = 'approved'),
+    'last_digest', (select jsonb_build_object('sent_at', sent_at, 'recipients', recipients, 'subject', subject)
+                    from email_sends where kind = 'digest' order by sent_at desc limit 1)
+  ),
   'daily', (select jsonb_agg(to_jsonb(daily) order by d) from daily),
   'today_news', coalesce((select jsonb_agg(to_jsonb(t) order by t.created_at) from today_news t), '[]'::jsonb),
   'runs', jsonb_build_object(
