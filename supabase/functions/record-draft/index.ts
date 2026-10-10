@@ -64,6 +64,10 @@ function site(url: string): string | null {
 }
 
 Deno.serve(async (req) => {
+  // Locked: only the scheduled jobs may run this (see jobSecretOk at the end of this file).
+  if (!(await jobSecretOk(req))) {
+    return new Response(JSON.stringify({ error: "Not allowed" }), { status: 401, headers: { "Content-Type": "application/json" } });
+  }
   if (!KEY) return json({ error: "Perplexity key secret is not set" }, 500);
   const body = await req.json().catch(() => ({}));
   const limit = Math.max(1, Math.min(Number(body.limit ?? 3), 8));
@@ -196,3 +200,14 @@ async function research(sb: SupabaseClient, r: Row, cats: string[]) {
 }
 
 const json = (d: unknown, status = 200) => new Response(JSON.stringify(d, null, 2), { status, headers: { "Content-Type": "application/json" } });
+
+// The project's public key reaches every function, so it can't protect one. Each scheduled job
+// also sends an x-job-secret header, which cron reads from the job_secrets table when it runs.
+// This compares that header with the same table, so the secret never appears in code.
+async function jobSecretOk(req: Request): Promise<boolean> {
+  const got = req.headers.get("x-job-secret");
+  if (!got) return false;
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const { data } = await admin.from("job_secrets").select("value").eq("key", "jobs").maybeSingle();
+  return !!data?.value && data.value === got;
+}
