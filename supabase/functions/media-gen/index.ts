@@ -94,6 +94,17 @@ Deno.serve(async (req) => {
   const wantsVideo = async (r: Rec) => r.featured && (await videoCount()) < MAX_VIDEOS;
 
   const fail = async (r: Rec, msg: string) => {
+    // A copyright or content block means the prompt named something protected (a game, a film, a brand).
+    // Trying the same words again can slip through and draw the protected thing. So rewrite the prompt
+    // once without the names, and try again without counting this as a failed attempt.
+    if (BLOCKED.test(msg) && r.visual_prompt && !r.visual_prompt.includes(GENERIC_MARK)) {
+      const generic = genericPrompt(r.visual_prompt);
+      await sb.from("records").update({
+        visual_prompt: generic, media_status: null, media_task_id: null, media_error: `rewritten after: ${msg}`.slice(0, 500),
+      }).eq("id", r.id);
+      log.push({ slug: r.slug, blocked: msg, rewritten: generic });
+      return;
+    }
     const attempts = r.media_attempts + 1;
     await sb.from("records").update({
       media_status: attempts >= 2 ? "failed" : null, media_task_id: null, media_error: msg.slice(0, 500), media_attempts: attempts,
@@ -183,6 +194,22 @@ Deno.serve(async (req) => {
   if (log.length) await sb.from("sync_runs").insert({ source: "media-gen", dry_run: false, started_at: startedAt, finished_at: new Date().toISOString(), stats });
   return json(stats);
 });
+
+// KIE errors that mean the model refused the content, not a temporary fault.
+const BLOCKED = /copyright|trademark|sensitive|content (policy|moderation)|not allowed|prohibited|violat/i;
+const GENERIC_MARK = "Do not show any real brand";
+
+// "A cinematic scene that represents this world record: Fastest Super Mario Odyssey any% speedrun. No people's faces."
+// becomes "A cinematic, symbolic scene about a world record: Fastest any% speedrun. ..." with a no-brands rule.
+// Capitalised words after the first are dropped, because that is where games, films, products and people appear.
+function genericPrompt(prompt: string): string {
+  const m = prompt.match(/world record:\s*([^.]+(?:\.\d[^.]*)*)/i);
+  const title = m ? m[1] : prompt;
+  const kept = title.split(/\s+/).filter((w, i) => i === 0 || !/^[A-Z][\w'’.&:-]*$/.test(w));
+  const subject = kept.join(" ").replace(/\s+/g, " ").trim() || "a record-breaking achievement";
+  return `A cinematic, symbolic scene about a world record: ${subject}. Show it with objects, light and setting. ` +
+    `${GENERIC_MARK}, character, logo, game, film, product or person. No people's faces.`;
+}
 
 const json = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status, headers: { "Content-Type": "application/json" } });
 
