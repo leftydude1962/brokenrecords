@@ -6,11 +6,24 @@
 // record: holder, figure, date, place, and sources. It writes the answer back to the same
 // candidate row and sets state = "done" (or "error").
 //
-// It NEVER creates or changes a record. Publishing happens only after a person approves.
+// Topic drafts never create or change a record: they publish only after a person approves.
+// Tips can go live by themselves, but only when they pass every check below.
 //
 // Tips from the public /tip form (claude_json.source = "tip") are free text, so for those it
 // also asks for a clean title, the category, which direction is better, and whether the tip
 // describes a real, reported record (is_record). The visitor's link is given to the search.
+//
+// Automatic publishing of tips (autoDecideTips, at the end of this file): a researched tip goes
+// live with no review only when ALL of these hold:
+//   1. The research says it is a real record (is_record) with high confidence.
+//   2. It has a holder, a numeric figure, a unit, a title and a real category.
+//   3. At least 2 independent websites back it, not counting the visitor's own link.
+//   4. Either no record on the site looks like it (it is published as a new record), or one record
+//      clearly matches (same unit) and the tip beats it, by no more than 25%, and is not the same
+//      feat reported again. Then that record is updated and the old holder is kept as history.
+//   5. Fewer than AUTO_DAILY_CAP tips went live automatically in the last 24 hours.
+// Anything else waits in the Tips tab on /admin with the reason. Every automatic publish emails
+// the owner (ADMIN_EMAIL) and, if they left an email, the visitor.
 //
 // Body options: {"limit": 3} at most this many topics per call (default 3, max 8).
 // Secret: PERPLEXITY_API_KEY (or PERPLEXITY_AI_KEY).
@@ -19,6 +32,9 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 const KEY = Deno.env.get("PERPLEXITY_API_KEY") ?? Deno.env.get("PERPLEXITY_AI_KEY");
 const ENDPOINT = "https://api.perplexity.ai/v1/sonar";
 const MODEL = "sonar";
+const AUTO_DAILY_CAP = 5;
+const ADMIN_EMAIL = "info@mohrcreativegroup.com";
+const SITE = "https://brokenrecords.com";
 
 const SCHEMA = {
   type: "object",
@@ -105,7 +121,10 @@ Deno.serve(async (req) => {
       return { id: r.id, error: String(e).slice(0, 200) };
     }));
   }
-  return json({ done: results.length, results });
+  // Tips that are researched but not yet decided (just now, or in an earlier run) get the
+  // automatic check: publish when everything holds up, otherwise leave them for review.
+  const auto = await autoDecideTips(sb).catch((e) => ({ error: String(e).slice(0, 200) }));
+  return json({ done: results.length, results, auto });
 });
 
 async function research(sb: SupabaseClient, r: Row, cats: string[]) {
@@ -210,4 +229,191 @@ async function jobSecretOk(req: Request): Promise<boolean> {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const { data } = await admin.from("job_secrets").select("value").eq("key", "jobs").maybeSingle();
   return !!data?.value && data.value === got;
+}
+
+// ---------- Automatic decision for researched tips ----------
+
+type Tip = {
+  id: string; category_guess: string | null; source_urls: string[] | null; proposed_holder: string | null;
+  proposed_value_numeric: number | null; proposed_value_text: string | null; unit: string | null;
+  claude_json: Record<string, any>;
+};
+type Live = {
+  id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null;
+  unit: string | null; better_direction: string | null; achieved_on: string | null; location: string | null;
+  governing_body: string | null; category_id: string; wikidata_id: string | null; last_verified_at: string | null;
+};
+
+const STOP = new Set(["the", "and", "for", "from", "with", "most", "world", "record", "largest", "biggest", "longest", "fastest", "highest", "heaviest", "oldest"]);
+const titleWords = (s: string) => [...new Set(s.toLowerCase().normalize("NFKD").split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)))];
+const nameKey = (s: string | null | undefined) => (s ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+
+// Share of the shorter title's words found in the other title (same rule as the Tips tab).
+function titleScore(a: string, b: string) {
+  const wa = titleWords(a), wb = titleWords(b);
+  if (!wa.length || !wb.length) return 0;
+  return wa.filter((w) => wb.includes(w)).length / Math.min(wa.length, wb.length);
+}
+
+async function autoDecideTips(sb: SupabaseClient) {
+  const { data } = await sb.from("candidates")
+    .select("id,category_guess,source_urls,proposed_holder,proposed_value_numeric,proposed_value_text,unit,claude_json")
+    .eq("status", "pending").eq("claude_json->>kind", "draft").eq("claude_json->>source", "tip")
+    .eq("claude_json->>state", "done").is("claude_json->>auto_decision", null).limit(10);
+  const tips = (data ?? []) as Tip[];
+  if (!tips.length) return [];
+
+  const { data: liveRows } = await sb.from("records")
+    .select("id,slug,title,holder,value_numeric,value_text,unit,better_direction,achieved_on,location,governing_body,category_id,wikidata_id,last_verified_at")
+    .eq("status", "published");
+  const live = (liveRows ?? []) as Live[];
+  const { data: cats } = await sb.from("categories").select("id,slug").not("parent_id", "is", null);
+  const catId = new Map((cats ?? []).map((c) => [c.slug, c.id]));
+
+  const out: unknown[] = [];
+  for (const t of tips) {
+    const result = await decideTip(sb, t, live, catId).catch((e) => ({ decision: "review", reason: `error: ${String(e).slice(0, 150)}` }));
+    await sb.from("candidates").update({
+      claude_json: { ...t.claude_json, auto_decision: result.decision, auto_reason: result.reason, auto_at: new Date().toISOString() },
+      ...(result.decision === "published" || result.decision === "updated"
+        ? { status: "approved", record_id: (result as { recordId?: string }).recordId ?? null }
+        : result.decision === "duplicate" ? { status: "rejected" } : {}),
+    }).eq("id", t.id);
+    out.push({ id: t.id, ...result });
+  }
+  return out;
+}
+
+async function decideTip(sb: SupabaseClient, t: Tip, live: Live[], catId: Map<string, string>) {
+  const j = t.claude_json;
+  const tip = (j.tip ?? {}) as Record<string, string | null>;
+  const review = (reason: string) => ({ decision: "review", reason });
+
+  // Rules 1 to 3.
+  if (j.is_record !== true) return review("research does not confirm it as a record");
+  if (j.confidence !== "high") return review(`research confidence is ${j.confidence ?? "unknown"}, not high`);
+  const title = String(j.title ?? "").trim();
+  const value = typeof t.proposed_value_numeric === "number" ? t.proposed_value_numeric : null;
+  if (!title || !t.proposed_holder || value == null || !t.unit) return review("missing title, holder, figure or unit");
+  const category = t.category_guess && catId.get(t.category_guess);
+  if (!category) return review("no category");
+  const tipSite = tip.url ? site(tip.url) : null;
+  const backing = new Set((t.source_urls ?? []).map(site).filter((x) => x && x !== tipSite));
+  if (backing.size < 2) return review(`only ${backing.size} independent source${backing.size === 1 ? "" : "s"} besides the visitor's link`);
+
+  // Rule 5.
+  const since = new Date(Date.now() - 86_400_000).toISOString();
+  const { count } = await sb.from("candidates").select("id", { count: "exact", head: true })
+    .eq("claude_json->>source", "tip").in("claude_json->>auto_decision", ["published", "updated"]).gt("claude_json->>auto_at", since);
+  if ((count ?? 0) >= AUTO_DAILY_CAP) return review(`daily limit of ${AUTO_DAILY_CAP} automatic publishes reached`);
+
+  // Rule 4.
+  const matches = live.map((r) => ({ r, score: titleScore(title, r.title) })).filter((m) => m.score >= 0.6).sort((a, b) => b.score - a.score);
+  const name = (tip.name ?? "").trim() || null;
+  if (!matches.length) {
+    const rec = await publishNew(sb, t, title, category, name);
+    await notify(t, rec.slug, title, "new");
+    return { decision: "published", reason: "new record, all checks passed", slug: rec.slug, recordId: rec.id };
+  }
+  const best = matches[0];
+  if (best.score < 0.8 || (matches[1] && matches[1].score >= 0.8)) return review(`may match an existing record (${matches.map((m) => m.r.slug).slice(0, 3).join(", ")})`);
+  const cur = best.r;
+  if ((cur.unit ?? "") !== t.unit) return review(`matches "${cur.title}" but the unit differs (${cur.unit} vs ${t.unit})`);
+  const old = cur.value_numeric == null ? null : Number(cur.value_numeric);
+  if (old == null || old === 0) return review(`matches "${cur.title}", which has no figure to compare`);
+  const sameHolder = nameKey(cur.holder) !== "" && nameKey(cur.holder) === nameKey(t.proposed_holder);
+  if (sameHolder && Math.abs(value - old) / Math.abs(old) < 0.005) return { decision: "duplicate", reason: `already listed as "${cur.title}"`, slug: cur.slug };
+  const lower = (cur.better_direction ?? j.better_direction) === "lower";
+  const beats = lower ? value < old : value > old;
+  if (!beats) return review(`does not beat the current "${cur.title}" (${cur.value_text ?? old})`);
+  if (Math.abs(value - old) / Math.abs(old) > 0.25) return review(`beats "${cur.title}" by more than 25%, check the units`);
+  if (cur.achieved_on && j.achieved_on && Date.parse(j.achieved_on) < Date.parse(cur.achieved_on)) return review(`dated before the current "${cur.title}"`);
+  await updateExisting(sb, t, cur, name);
+  await notify(t, cur.slug, cur.title, "update");
+  return { decision: "updated", reason: `beat "${cur.title}", all checks passed`, slug: cur.slug, recordId: cur.id };
+}
+
+async function addSources(sb: SupabaseClient, recordId: string, urls: string[]) {
+  const rows = [...new Set(urls)].filter((u) => /^https?:\/\//.test(u)).slice(0, 5)
+    .map((u) => ({ record_id: recordId, url: u, publisher: site(u), license: null }));
+  if (rows.length) await sb.from("record_sources").insert(rows);
+}
+
+async function publishNew(sb: SupabaseClient, t: Tip, title: string, categoryId: string, name: string | null) {
+  const j = t.claude_json;
+  const base = title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
+  let slug = base;
+  for (let i = 2; i < 50; i++) {
+    const { data: taken } = await sb.from("records").select("id").eq("slug", slug).maybeSingle();
+    if (!taken) break;
+    slug = `${base}-${i}`;
+  }
+  const now = new Date().toISOString();
+  const { data: rec, error } = await sb.from("records").insert({
+    slug, category_id: categoryId, title, holder: t.proposed_holder, value_text: t.proposed_value_text, value_numeric: t.proposed_value_numeric,
+    unit: t.unit, achieved_on: j.achieved_on ?? null, location: j.location ?? null, governing_body: j.governing_body ?? null,
+    better_direction: j.better_direction === "lower" ? "lower" : "higher", status: "published", tipped_by: name,
+    last_verified_at: now, last_checked_at: now, updated_at: now,
+    visual_prompt: `A cinematic scene that represents this world record: ${title}. No people's faces.`,
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  await addSources(sb, rec.id, t.source_urls ?? []);
+  return { id: rec.id as string, slug };
+}
+
+async function updateExisting(sb: SupabaseClient, t: Tip, cur: Live, name: string | null) {
+  const j = t.claude_json;
+  const year = cur.achieved_on?.slice(0, 4) ?? "previous";
+  const now = new Date().toISOString();
+  const { data: hist, error: hErr } = await sb.from("records").insert({
+    slug: `${cur.slug}-${year}-${crypto.randomUUID().slice(0, 4)}`, category_id: cur.category_id, title: `${cur.title} (${year})`,
+    holder: cur.holder, value_numeric: cur.value_numeric, value_text: cur.value_text, unit: cur.unit, better_direction: cur.better_direction,
+    achieved_on: cur.achieved_on, location: cur.location, governing_body: cur.governing_body, wikidata_id: cur.wikidata_id,
+    status: "superseded", superseded_by: cur.id, last_verified_at: cur.last_verified_at, featured: false,
+  }).select("id").single();
+  if (hErr) throw new Error(hErr.message);
+  await sb.from("record_sources").update({ record_id: hist.id }).eq("record_id", cur.id);
+  await addSources(sb, cur.id, t.source_urls ?? []);
+  const { error } = await sb.from("records").update({
+    holder: t.proposed_holder, value_text: t.proposed_value_text, value_numeric: t.proposed_value_numeric,
+    achieved_on: j.achieved_on ?? null, location: j.location ?? cur.location, governing_body: j.governing_body ?? cur.governing_body,
+    tipped_by: name, last_verified_at: now, last_checked_at: now, updated_at: now,
+  }).eq("id", cur.id);
+  if (error) throw new Error(error.message);
+}
+
+// Emails the owner about every automatic publish, and the visitor if they left an email.
+async function notify(t: Tip, slug: string, title: string, kind: "new" | "update") {
+  const key = Deno.env.get("RESEND_API_KEY");
+  if (!key) return;
+  const tip = (t.claude_json.tip ?? {}) as Record<string, string | null>;
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const url = `${SITE}/records/${slug}`;
+  const frame = (inner: string) => `<!doctype html><html><body style="margin:0;padding:24px;background:#eceff1;font-family:Georgia,serif;color:#17212b">
+<table role="presentation" width="100%" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:8px"><tr><td style="padding:28px">
+<p style="margin:0 0 16px;font:900 22px Arial,sans-serif"><span style="color:#c98a12">Broken</span> Records</p>${inner}</td></tr></table></body></html>`;
+  const emails: unknown[] = [{
+    from: "Broken Records <info@brokenrecords.com>", to: [ADMIN_EMAIL],
+    subject: `Auto-published from a tip: ${title}`,
+    html: frame(`<p style="margin:0 0 12px;font-size:16px">A tip passed every check and went live ${kind === "new" ? "as a new record" : "as an update to an existing record (the old holder is kept as history)"}.</p>
+<p style="margin:0 0 6px;font:800 18px Arial,sans-serif"><a href="${url}" style="color:#1d5c8f">${esc(title)}</a></p>
+<p style="margin:0 0 12px;font-size:15px">${esc(t.proposed_holder)} · ${esc(t.proposed_value_text)}</p>
+<p style="margin:0 0 6px;font-size:14px;color:#4a5866">Visitor wrote: ${esc(tip.what)}${tip.name ? ` (${esc(tip.name)})` : ""}</p>
+<p style="margin:0 0 6px;font-size:14px;color:#4a5866">Research: ${esc(t.claude_json.note)}</p>
+<p style="margin:12px 0 0;font-size:14px">Nothing to do if it looks right. If not, fix or hide it from <a href="${SITE}/admin" style="color:#1d5c8f">/admin</a> or tell Claude.</p>`),
+    text: `A tip went live automatically: ${title}\n${t.proposed_holder} · ${t.proposed_value_text}\n${url}\nVisitor wrote: ${tip.what}\nResearch: ${t.claude_json.note ?? ""}`,
+  }];
+  if (tip.email) {
+    emails.push({
+      from: "Broken Records <info@brokenrecords.com>", to: [tip.email], subject: `Your tip is live: ${title}`,
+      html: frame(`<p style="margin:0 0 12px;font-size:17px;line-height:1.5">${tip.name ? `Thanks, ${esc(tip.name)}.` : "Thanks for the tip."} We checked it against its sources, and it's now on the site:</p>
+<p style="margin:0 0 20px;font:800 19px Arial,sans-serif"><a href="${url}?utm_source=email&utm_medium=tip_live" style="color:#1d5c8f">${esc(title)}</a></p>
+${tip.name ? `<p style="margin:0 0 16px;font-size:15px">The record page credits you as "Tipped off by ${esc(tip.name)}." Share it.</p>` : ""}
+<p style="margin:0;font-size:15px">Want the week's broken records by email? <a href="${SITE}/alerts" style="color:#1d5c8f">Get record alerts</a>.</p>`),
+      text: `Thanks for the tip. It's now on the site: ${title}\n${url}`,
+    });
+  }
+  await fetch("https://api.resend.com/emails/batch", {
+    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(emails),
+  }).catch(() => {});
 }

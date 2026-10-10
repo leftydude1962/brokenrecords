@@ -84,7 +84,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       </section>
 
       <section id="tips" hidden>
-        <p class="hint">Tips from the public form. Each one is researched within about 10 minutes, then waits for you here.</p>
+        <p class="hint">Tips from the public form are researched within about 10 minutes. A tip that passes every check goes live by itself and you get an email. Only the ones that need a decision wait here, with the reason.</p>
         <p id="tips-status" role="status"></p>
         <ul id="tip-items" class="items"></ul>
       </section>
@@ -282,6 +282,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
           <p class="correction"><strong>Visitor wrote:</strong> ${esc(tip.what)}${tip.details ? " · " + esc(tip.details) : ""}</p>
           <p><strong>Their link:</strong> <a href="${esc(tip.url)}" target="_blank" rel="noopener nofollow">${esc(tip.url)}</a></p>
           <p class="meta">${tip.name ? "From " + esc(tip.name) : "No name given"}${tip.email ? " · " + esc(tip.email) : ""}</p>
+          ${j.auto_reason ? `<p class="why"><strong>Waiting for you because:</strong> ${esc(j.auto_reason)}</p>` : ""}
           ${researched && j.note ? `<p class="now"><strong>Research:</strong> ${esc(j.note)}</p>` : ""}
           ${state === "error" ? `<p class="row-status">${esc(j.error || "")}</p>` : ""}
           ${researched ? `
@@ -482,6 +483,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     .admin .match { display: block; padding: 0.2rem 0; }
     .admin .match input, .admin .credit input { width: auto; }
     .admin .credit { display: block; margin: 0.5rem 0; }
+    .admin .why { margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-left: 4px solid var(--amber); background: rgba(242, 179, 61, 0.12); }
     .admin .kv li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); }
     .admin .kv li.warn strong { color: var(--red); }
     @media (max-width: 34rem) { .admin .finds li { grid-template-columns: 1fr; gap: 0.3rem; } .admin .finds .pill { justify-self: start; } .admin .chart .d { font-size: 0.6rem; } .admin .tile .n { font-size: 1.8rem; } }
