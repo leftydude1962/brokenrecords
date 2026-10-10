@@ -176,7 +176,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
         $("t-new").textContent = live;
         $("t-broken").textContent = today.broken ?? 0;
         $("t-live").textContent = t.published.toLocaleString();
-        $("t-wait").textContent = (q.corrections + q.news + q.rechecks + q.drafts).toLocaleString();
+        $("t-wait").textContent = (q.corrections + q.news + q.recheck_breaks + q.recheck_figures).toLocaleString();
 
         $("finds").innerHTML = d.today_news.length
           ? d.today_news.map((f) => {
@@ -205,7 +205,8 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
         $("queues").innerHTML = kv([
           ["Corrections from visitors", q.corrections, q.corrections > 0],
           ["News finds held for review", q.news, q.news > 0],
-          ["Recheck results", q.rechecks.toLocaleString(), q.rechecks > 50],
+          ["Recheck: possible new record holders", q.recheck_breaks, q.recheck_breaks > 0],
+          ["Recheck: updated figures, same holder", q.recheck_figures, q.recheck_figures > 0],
           ["Researched drafts not published", q.drafts],
         ]);
         $("health").innerHTML = kv([

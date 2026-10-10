@@ -69,7 +69,10 @@ select jsonb_build_object(
   ),
   'queues', jsonb_build_object(
     'corrections', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'submission'),
-    'rechecks', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'recheck'),
+    'recheck_breaks', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'recheck'
+                         and coalesce(claude_json->>'triage', 'new_holder') <> 'figure_update'),
+    'recheck_figures', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'recheck'
+                         and claude_json->>'triage' = 'figure_update'),
     'drafts', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' = 'draft'),
     'news', (select count(*) from candidates where status = 'pending' and claude_json->>'kind' is null)
   ),
