@@ -15,7 +15,8 @@ if (hasQuery) {
     failed = true;
   }
   // A search that finds nothing tells us which records people want. Store only the words.
-  if (!failed && results.length === 0) await logSearchMiss(q);
+  // Skip code-like text: crawlers read our script and "search" for pieces of it.
+  if (!failed && results.length === 0 && !/[${}<>]/.test(q)) await logSearchMiss(q);
 }
 cacheFor(600, Astro.response);
 const title = hasQuery ? `Search: ${q} | Broken Records` : "Search records | Broken Records";

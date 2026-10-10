@@ -6,6 +6,7 @@
 //
 // Actions (JSON body):
 //   { action: "list" }
+//   { action: "dashboard", days?: 14 }   daily numbers for the dashboard (see admin_dashboard in SQL)
 //   { action: "approve", candidate_id, fields: { holder, value_numeric, value_text, unit, achieved_on, location } }
 //   { action: "reject", candidate_id }
 //   { action: "hold", candidate_id }
@@ -54,6 +55,12 @@ Deno.serve(async (req) => {
 
   try {
     if (body.action === "list") return json(await listPending(sb), 200, origin);
+    if (body.action === "dashboard") {
+      const days = Math.max(7, Math.min(Number(body.days ?? 14) || 14, 60));
+      const { data, error } = await sb.rpc("admin_dashboard", { days });
+      if (error) throw new Error(error.message);
+      return json(data, 200, origin);
+    }
 
     const candidateId = typeof body.candidate_id === "string" ? body.candidate_id : "";
     if (!candidateId) return json({ error: "Missing submission." }, 400, origin);

@@ -57,7 +57,7 @@ const q = Astro.url.searchParams.get("q") ?? "";
         hits.map((h, i) =>
           `<li role="option" id="ss-opt-${i}"><a href="/records/${encodeURIComponent(h.s)}"><span class="ss-t">${esc(h.t)}</span><span class="ss-m">${esc([h.v, h.h].filter(Boolean).join(" · "))}</span></a></li>`
         ).join("") +
-        `<li class="ss-all"><a href="/search?q=${encodeURIComponent(q)}">See all results for “${esc(q)}”</a></li>`;
+        `<li class="ss-all"><a href="/search?${new URLSearchParams({ q })}">See all results for “${esc(q)}”</a></li>`;
     }
     list.hidden = false;
     input.setAttribute("aria-expanded", "true");

@@ -6,9 +6,9 @@ const supabaseUrl = "https://ccwmynoumrqpvnmpcgch.supabase.co";
 const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
 ---
 
-<Base title="Review corrections | Broken Records" description="Private page." noindex={true}>
+<Base title="Admin | Broken Records" description="Private page." noindex={true}>
   <div class="admin wrap">
-    <h1>Review corrections</h1>
+    <h1>Admin</h1>
 
     <section id="login" hidden>
       <p>Enter your email. We send a sign-in link.</p>
@@ -19,14 +19,63 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       <p id="login-status" role="status"></p>
     </section>
 
-    <section id="queue" hidden>
+    <div id="signed-in" hidden>
       <div class="admin-bar">
-        <span id="count"></span>
+        <nav class="tabs" aria-label="Admin sections">
+          <button type="button" class="tab" data-tab="dash" aria-pressed="true">Today</button>
+          <button type="button" class="tab" data-tab="queue" aria-pressed="false">Corrections <span id="count"></span></button>
+        </nav>
         <button type="button" id="signout">Sign out</button>
       </div>
-      <p id="queue-status" role="status"></p>
-      <ul id="items" class="items"></ul>
-    </section>
+
+      <section id="dash">
+        <p id="dash-status" role="status"></p>
+        <div id="dash-body" hidden>
+          <p class="runline" id="runline"></p>
+
+          <div class="tiles">
+            <div class="tile"><span class="n" id="t-new"></span><span class="l">New records found today</span></div>
+            <div class="tile"><span class="n" id="t-broken"></span><span class="l">Records broken today</span></div>
+            <div class="tile"><span class="n" id="t-live"></span><span class="l">Live records</span></div>
+            <div class="tile"><span class="n" id="t-wait"></span><span class="l">Waiting for review</span></div>
+          </div>
+
+          <h2>Found today by the news check</h2>
+          <ul class="finds" id="finds"></ul>
+
+          <h2>Last 14 days</h2>
+          <p class="hint">Bars: records the news check found each day. Hover a bar for the numbers.</p>
+          <div class="chart" id="chart" role="img" aria-label="Records found by the news check per day"></div>
+          <details class="daily">
+            <summary>Show as a table</summary>
+            <table>
+              <thead><tr><th>Day</th><th>Found by news check</th><th>Went live</th><th>All records added</th><th>Broken</th><th>Search cost</th></tr></thead>
+              <tbody id="daily-rows"></tbody>
+            </table>
+          </details>
+
+          <div class="cols">
+            <div>
+              <h2>Waiting for you</h2>
+              <ul class="kv" id="queues"></ul>
+            </div>
+            <div>
+              <h2>Site health</h2>
+              <ul class="kv" id="health"></ul>
+            </div>
+          </div>
+
+          <h2>Searches with no result</h2>
+          <p class="hint">What visitors looked for and did not find. Good candidates for new records.</p>
+          <ul class="kv" id="misses"></ul>
+        </div>
+      </section>
+
+      <section id="queue" hidden>
+        <p id="queue-status" role="status"></p>
+        <ul id="items" class="items"></ul>
+      </section>
+    </div>
   </div>
 
   <script is:inline type="module" define:vars={{ supabaseUrl, publishableKey }}>
@@ -86,7 +135,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       $("queue-status").textContent = "Loading...";
       try {
         const { items } = await call({ action: "list" });
-        $("count").textContent = items.length + " waiting";
+        $("count").textContent = "(" + items.length + ")";
         $("items").innerHTML = items.map(card).join("") || "<li>Nothing waiting. Good.</li>";
         $("queue-status").textContent = "";
       } catch (e) {
@@ -94,10 +143,104 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
       }
     }
 
+    const fmtDay = (d, opts) => new Date(d + "T12:00:00").toLocaleDateString(undefined, opts);
+    const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const money = (n) => "$" + Number(n || 0).toFixed(2);
+    const kv = (rows) => rows.map(([k, v, warn]) => `<li${warn ? ' class="warn"' : ""}><span>${k}</span><strong>${v}</strong></li>`).join("");
+
+    // What happened to each claim the news check found today.
+    function findState(f) {
+      if (f.status === "rejected") return ["Rejected", "bad"];
+      if (f.record_status === "hidden") return ["Removed", "bad"];
+      if (f.status === "pending") return ["Waiting", "wait"];
+      if (f.record_id) return ["Updated a record", "ok"];
+      return ["New, live", "ok"];
+    }
+
+    async function loadDashboard() {
+      $("dash-status").textContent = "Loading...";
+      try {
+        const d = await call({ action: "dashboard", days: 14 });
+        const today = d.daily[d.daily.length - 1] || {};
+        const q = d.queues, t = d.totals;
+        const live = d.today_news.filter((f) => !f.record_id && f.status !== "rejected" && f.record_status === "published").length;
+
+        $("runline").innerHTML =
+          `<strong>${esc(fmtDay(d.today, { weekday: "long", month: "long", day: "numeric" }))}.</strong> ` +
+          (d.runs.count
+            ? `News check ran ${d.runs.count} of 10 searches, last at ${esc(fmtTime(d.runs.last))}. ` +
+              (d.runs.failed ? `<span class="badtxt">${d.runs.failed} failed.</span> ` : "No failures. ") +
+              `Cost today ${money(today.cost)}.`
+            : `<span class="badtxt">The news check has not run yet today.</span> It runs at about 6 AM.`);
+
+        $("t-new").textContent = live;
+        $("t-broken").textContent = today.broken ?? 0;
+        $("t-live").textContent = t.published.toLocaleString();
+        $("t-wait").textContent = (q.corrections + q.news + q.rechecks + q.drafts).toLocaleString();
+
+        $("finds").innerHTML = d.today_news.length
+          ? d.today_news.map((f) => {
+              const [label, cls] = findState(f);
+              const name = f.slug && f.record_status === "published"
+                ? `<a href="/records/${esc(f.slug)}" target="_blank" rel="noopener">${esc(f.title)}</a>`
+                : esc(f.title);
+              const src = f.sources < 2 ? `<span class="warntxt">${f.sources} source</span>` : `${f.sources} sources`;
+              return `<li><span class="pill ${cls}">${label}</span><div><p class="ft">${name}</p>` +
+                `<p class="fm">${esc(f.holder)} · ${esc(f.value_text)} · ${src}</p></div></li>`;
+            }).join("")
+          : "<li>Nothing found today.</li>";
+
+        const max = Math.max(1, ...d.daily.map((x) => x.news_found));
+        $("chart").innerHTML = d.daily.map((x) => {
+          const h = Math.round((x.news_found / max) * 100);
+          const tip = `${fmtDay(x.d, { month: "short", day: "numeric" })}: ${x.news_found} found, ${x.news_live} live, ${x.broken} broken, ${money(x.cost)}`;
+          return `<div class="col" title="${esc(tip)}"><span class="v">${x.news_found || ""}</span>` +
+            `<span class="bar" style="height:${h}%"></span>` +
+            `<span class="d">${esc(fmtDay(x.d, { month: "numeric", day: "numeric" }))}</span></div>`;
+        }).join("");
+        $("daily-rows").innerHTML = d.daily.slice().reverse().map((x) =>
+          `<tr><td>${esc(fmtDay(x.d, { weekday: "short", month: "short", day: "numeric" }))}</td><td>${x.news_found}</td>` +
+          `<td>${x.news_live}</td><td>${x.added}</td><td>${x.broken}</td><td>${money(x.cost)}</td></tr>`).join("");
+
+        $("queues").innerHTML = kv([
+          ["Corrections from visitors", q.corrections, q.corrections > 0],
+          ["News finds held for review", q.news, q.news > 0],
+          ["Recheck results", q.rechecks.toLocaleString(), q.rechecks > 50],
+          ["Researched drafts not published", q.drafts],
+        ]);
+        $("health").innerHTML = kv([
+          ["Categories with records", t.categories],
+          ["Old record pages (history)", t.history],
+          ["Records with only 1 source", t.one_source, t.one_source > 0],
+          ["Records without a picture", t.no_poster, t.no_poster > 0],
+        ]);
+        $("misses").innerHTML = d.search_misses.length
+          ? kv(d.search_misses.map((m) => [esc(m.query), m.count + (m.count === 1 ? " search" : " searches")]))
+          : "<li>None yet.</li>";
+
+        $("dash-body").hidden = false;
+        $("dash-status").textContent = "";
+      } catch (e) {
+        $("dash-status").textContent = e.message;
+      }
+    }
+
+    function showTab(name) {
+      document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === name)));
+      $("dash").hidden = name !== "dash";
+      $("queue").hidden = name !== "queue";
+    }
+    document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+    let loaded = false;
     function showFor(session) {
       $("login").hidden = !!session;
-      $("queue").hidden = !session;
-      if (session) loadQueue();
+      $("signed-in").hidden = !session;
+      if (session && !loaded) {
+        loaded = true;
+        loadDashboard();
+        loadQueue();
+      }
     }
 
     $("login-form").addEventListener("submit", async (e) => {
@@ -134,7 +277,7 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
         await call(body);
         li.remove();
         const left = $("items").querySelectorAll(".item").length;
-        $("count").textContent = left + " waiting";
+        $("count").textContent = "(" + left + ")";
       } catch (err) {
         status.textContent = err.message;
         buttons.forEach((b) => (b.disabled = false));
@@ -146,20 +289,56 @@ const publishableKey = "sb_publishable_XQGLSf28dqucKBAaV4XC4A_znvwj3Z5";
     sb.auth.onAuthStateChange((_evt, session) => showFor(session));
   </script>
 
-  <style>
-    .admin { padding-top: 2rem; padding-bottom: 3rem; max-width: 52rem; }
+  <style is:global>
+    .admin { padding-top: 2rem; padding-bottom: 3rem; max-width: 60rem; }
+    .admin h2 { font: 800 1.1rem/1.2 var(--display); margin: 2rem 0 0.6rem; }
+    .admin .tabs { display: flex; gap: 0.3rem; }
+    .admin .tab { font-weight: 700; background: transparent; color: var(--ink); border-color: var(--rule); }
+    .admin .tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .admin .runline { margin: 0 0 1rem; color: var(--ink-soft); }
+    .admin .runline strong { color: var(--ink); }
+    .admin .badtxt { color: var(--red); font-weight: 700; }
+    .admin .warntxt { color: var(--red); }
+    .admin .tiles { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+    .admin .tile { background: var(--board); color: #fff; border-radius: 8px; padding: 1rem; display: grid; gap: 0.3rem; }
+    .admin .tile .n { font: 800 2.2rem/1 var(--display); color: var(--amber); font-variant-numeric: tabular-nums; }
+    .admin .tile .l { font-size: 0.85rem; color: #c9d3dc; }
+    .admin .hint { margin: -0.3rem 0 0.6rem; font-size: 0.9rem; color: var(--ink-soft); }
+    .admin .finds { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--rule); }
+    .admin .finds li { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.75rem; align-items: start; padding: 0.7rem 0; border-bottom: 1px solid var(--rule); }
+    .admin .ft { margin: 0; font-weight: 700; }
+    .admin .fm { margin: 0.15rem 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+    .admin .pill { display: inline-block; font: 700 0.75rem/1 var(--display); padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid; text-align: center; }
+    .admin .pill.ok { color: #1f6b3a; border-color: #1f6b3a; }
+    .admin .pill.wait { color: #8a5a00; border-color: #8a5a00; }
+    .admin .pill.bad { color: var(--red); border-color: var(--red); }
+    .admin .chart { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; height: 10rem; align-items: end; border-bottom: 1px solid var(--rule); padding-top: 1.2rem; }
+    .admin .chart .col { display: grid; grid-template-rows: auto 1fr auto; height: 100%; align-items: end; justify-items: center; cursor: default; }
+    .admin .chart .v { font: 700 0.8rem/1 var(--display); color: var(--ink); margin-bottom: 0.2rem; }
+    .admin .chart .bar { width: 70%; max-width: 2.2rem; background: var(--amber); border-radius: 4px 4px 0 0; min-height: 0; align-self: end; }
+    .admin .chart .col:hover .bar { filter: brightness(0.85); }
+    .admin .chart .d { font-size: 0.7rem; color: var(--ink-soft); padding-top: 0.3rem; }
+    .admin .daily { margin-top: 1.8rem; }
+    .admin .daily table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-top: 0.5rem; }
+    .admin .daily th, .admin .daily td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+    .admin .cols { display: grid; gap: 0 2rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+    .admin .kv { list-style: none; padding: 0; margin: 0; }
+    .admin .kv li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); }
+    .admin .kv li.warn strong { color: var(--red); }
+    @media (max-width: 34rem) { .admin .finds li { grid-template-columns: 1fr; gap: 0.3rem; } .admin .finds .pill { justify-self: start; } .admin .chart .d { font-size: 0.6rem; } .admin .tile .n { font-size: 1.8rem; } }
     .admin input { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid #bbb; border-radius: 6px; width: 100%; box-sizing: border-box; }
     .admin button { font: inherit; padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid #888; cursor: pointer; margin-right: 0.4rem; }
     .admin button:disabled { opacity: 0.5; cursor: default; }
     .admin-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .items { list-style: none; padding: 0; display: grid; gap: 1.2rem; }
-    .item { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
-    .item h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
-    .meta, .now, .correction { margin: 0.3rem 0; }
-    .fields { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin: 0.6rem 0; }
-    .fields label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
-    .actions { margin-top: 0.6rem; }
-    .row-status { color: #a33; margin: 0.4rem 0 0; }
-    #login-form { display: grid; gap: 0.6rem; max-width: 26rem; }
+    .admin .items { list-style: none; padding: 0; display: grid; gap: 1.2rem; }
+    .admin .item { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
+    .admin .item h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+    .admin .meta, .admin .now, .admin .correction { margin: 0.3rem 0; }
+    .admin .fields { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin: 0.6rem 0; }
+    .admin .fields label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+    .admin .actions { margin-top: 0.6rem; }
+    .admin .row-status { color: #a33; margin: 0.4rem 0 0; }
+    .admin #login-form { display: grid; gap: 0.6rem; max-width: 26rem; }
+    @media (prefers-color-scheme: dark) { .admin .pill.ok { color: #7fd29b; border-color: #7fd29b; } .admin .pill.wait { color: #f2c46d; border-color: #f2c46d; } .admin .tile { background: var(--flap); } }
   </style>
 </Base>
