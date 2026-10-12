@@ -11,8 +11,10 @@ interface Props {
   layout?: "grid" | "five";
   /** When set, each card is labeled with its section and links to the section page. */
   sectionOf?: Record<string, { slug: string; name: string; count?: number }>;
+  /** Shuffle the cards in the visitor's browser on every page load (the page itself is cached). */
+  shuffle?: boolean;
 }
-const { records, numbered = true, filterable = false, layout = "grid", sectionOf } = Astro.props;
+const { records, numbered = true, filterable = false, layout = "grid", sectionOf, shuffle = false } = Astro.props;
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -58,6 +60,28 @@ const pad = (n: number) => String(n).padStart(2, "0");
     );
   })}
 </ul>
+{shuffle && (
+  <script is:inline>
+    // Runs while the page is still loading, before the cards are drawn, so there is no visible jump.
+    // The page is cached at the edge for an hour, so the order has to change here, not on the server.
+    (function () {
+      var ul = document.currentScript && document.currentScript.previousElementSibling;
+      if (!ul) return;
+      var items = Array.prototype.slice.call(ul.children);
+      for (var i = items.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = items[i]; items[i] = items[j]; items[j] = t;
+      }
+      items.forEach(function (li, k) {
+        ul.appendChild(li);
+        var kicker = li.querySelector(".kicker");
+        if (kicker) kicker.textContent = kicker.textContent.replace(/^\d+(?= \/)/, String(k + 1).padStart(2, "0"));
+        var img = li.querySelector("img.media");
+        if (img) img.loading = k < 5 ? "eager" : "lazy";
+      });
+    })();
+  </script>
+)}
 {filterable && <p class="none" hidden data-none>No records in this category yet.</p>}
 
 <script>
