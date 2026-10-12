@@ -141,9 +141,10 @@ const facts = record
           <Stat record={record} />
           </div>
           {record.poster_url && (
-            <figure class="rec-media" aria-hidden="true">
-              <img src={record.poster_url} alt={`Illustration for the world record: ${record.title}`} width="576" height="1024" />
+            <figure class="rec-media" aria-hidden={record.photo_credit ? undefined : "true"}>
+              <img src={record.poster_url} alt={record.photo_credit ? `Photo for the world record: ${record.title}` : `Illustration for the world record: ${record.title}`} width="576" height="1024" />
               {record.video_url && <video src={record.video_url} poster={record.poster_url} muted loop playsinline autoplay preload="metadata" tabindex="-1"></video>}
+              {record.photo_credit && <figcaption>Photo courtesy of {record.photo_credit}</figcaption>}
             </figure>
           )}
         </div>
@@ -224,6 +225,7 @@ const facts = record
   @media (max-width: 55.99rem) { .rec-media { aspect-ratio: 4 / 5; max-width: none; } }
   .rec-media img, .rec-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   @media (prefers-reduced-motion: reduce) { .rec-media video { display: none; } }
+  .rec-media figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 1.5rem 0.6rem 0.45rem; font-size: 0.75rem; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.75)); }
   .crumbs { padding: 2rem 0 0.75rem; font-size: 0.95rem; }
   .rec-h1 { margin-bottom: 1.5rem; color: #fff; font-size: clamp(2.2rem, 1.3rem + 4vw, 4rem); }
   .quick-answer { color: #fff; font-size: 1.15rem; line-height: 1.5; max-width: 40rem; margin: -0.5rem 0 1.25rem; }

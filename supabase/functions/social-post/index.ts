@@ -34,7 +34,7 @@ const igImage = (posterUrl: string) =>
 type Row = {
   id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null;
   unit: string | null; achieved_on: string | null; location: string | null; poster_url: string | null; updated_at: string | null;
-  created_at: string | null; category_id: string;
+  created_at: string | null; category_id: string; photo_credit?: string | null;
 };
 
 Deno.serve(async (req) => {
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
   const lastPost = new Map<string, string>();
   for (const p of posted ?? []) if (p.record_id) lastPost.set(p.record_id, p.posted_at);
 
-  const cols = "id,slug,title,holder,value_numeric,value_text,unit,achieved_on,location,poster_url,updated_at,created_at,category_id";
+  const cols = "id,slug,title,holder,value_numeric,value_text,unit,achieved_on,location,poster_url,updated_at,created_at,category_id,photo_credit";
   const { data: recs } = await sb.from("records").select(cols).eq("status", "published").not("poster_url", "is", null);
   const all = (recs ?? []) as Row[];
 
@@ -134,6 +134,7 @@ Deno.serve(async (req) => {
     where || null,
     "",
     `Sources and the full record: ${SITE}/records/${pick.slug}`,
+    pick.photo_credit ? `Photo courtesy of ${pick.photo_credit}` : null,
     "",
     `#WorldRecord ${tag}`,
   ].filter((l) => l !== null).join("\n");
@@ -146,6 +147,7 @@ Deno.serve(async (req) => {
     where || null,
     "",
     "Sources and the full record at brokenrecords.com (link in bio)",
+    pick.photo_credit ? `Photo courtesy of ${pick.photo_credit}` : null,
     "",
     `#WorldRecord #WorldRecords ${tag} #DidYouKnow #BrokenRecords`,
   ].filter((l) => l !== null).join("\n");
