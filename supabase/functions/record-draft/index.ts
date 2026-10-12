@@ -248,10 +248,23 @@ const STOP = new Set(["the", "and", "for", "from", "with", "most", "world", "rec
 const titleWords = (s: string) => [...new Set(s.toLowerCase().normalize("NFKD").split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)))];
 const nameKey = (s: string | null | undefined) => (s ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
 
-// Share of the shorter title's words found in the other title (same rule as the Tips tab).
+// Words that make a different record: "Women's wheelchair marathon" is not "Women's marathon",
+// and "50m butterfly short course" is not the long course record.
+const QUALIFIERS = new Set(["wheelchair", "short", "indoor", "junior", "youth", "masters", "senior", "para", "paralympic", "relay",
+  "team", "mixed", "tandem", "solo", "unassisted", "assisted", "blind", "female", "male", "girl", "boy", "child", "teen", "amateur",
+  "oxygen", "winter", "summer", "living", "ever", "single", "double", "underwater", "backwards", "robot", "dog", "cat"]);
+const GENDER = (s: string) => /\bwom[ae]n'?s?\b|\bfemale\b|\bgirls?\b/i.test(s) ? "f" : /\bm[ae]n'?s?\b|\bmale\b|\bboys?\b/i.test(s) ? "m" : "";
+// Matching ignores bare numbers ("2,000" and "10,000" both split into "000") and gender words; gender is compared on its own.
+const matchWords = (s: string) => titleWords(s).filter((w) => !/^\d+$/.test(w) && !["men", "mens", "women", "womens"].includes(w));
+
+// Share of the shorter title's words found in the other title. A qualifier word on one side only,
+// or a different gender, means a different record (score 0).
 function titleScore(a: string, b: string) {
-  const wa = titleWords(a), wb = titleWords(b);
+  const wa = matchWords(a), wb = matchWords(b);
   if (!wa.length || !wb.length) return 0;
+  const ga = GENDER(a), gb = GENDER(b);
+  if (ga && gb && ga !== gb) return 0;
+  if (wa.some((w) => QUALIFIERS.has(w) && !wb.includes(w)) || wb.some((w) => QUALIFIERS.has(w) && !wa.includes(w))) return 0;
   return wa.filter((w) => wb.includes(w)).length / Math.min(wa.length, wb.length);
 }
 
