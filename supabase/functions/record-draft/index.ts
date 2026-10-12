@@ -252,10 +252,11 @@ const nameKey = (s: string | null | undefined) => (s ?? "").toLowerCase().normal
 // and "50m butterfly short course" is not the long course record.
 const QUALIFIERS = new Set(["wheelchair", "short", "indoor", "junior", "youth", "masters", "senior", "para", "paralympic", "relay",
   "team", "mixed", "tandem", "solo", "unassisted", "assisted", "blind", "female", "male", "girl", "boy", "child", "teen", "amateur",
-  "oxygen", "winter", "summer", "living", "ever", "single", "double", "underwater", "backwards", "robot", "dog", "cat"]);
+  "oxygen", "winter", "summer", "living", "single", "double", "underwater", "backwards", "robot", "dog", "cat"]);
 const GENDER = (s: string) => /\bwom[ae]n'?s?\b|\bfemale\b|\bgirls?\b/i.test(s) ? "f" : /\bm[ae]n'?s?\b|\bmale\b|\bboys?\b/i.test(s) ? "m" : "";
 // Matching ignores bare numbers ("2,000" and "10,000" both split into "000") and gender words; gender is compared on its own.
-const matchWords = (s: string) => titleWords(s).filter((w) => !/^\d+$/.test(w) && !["men", "mens", "women", "womens"].includes(w));
+const FILLER = ["men", "mens", "women", "womens", "ever", "grown", "recorded", "official", "officially", "guinness", "title", "new", "all", "time", "set"];
+const matchWords = (s: string) => titleWords(s).filter((w) => !/^\d+$/.test(w) && !FILLER.includes(w));
 
 // Share of the shorter title's words found in the other title. A qualifier word on one side only,
 // or a different gender, means a different record (score 0).
@@ -265,7 +266,11 @@ function titleScore(a: string, b: string) {
   const ga = GENDER(a), gb = GENDER(b);
   if (ga && gb && ga !== gb) return 0;
   if (wa.some((w) => QUALIFIERS.has(w) && !wb.includes(w)) || wb.some((w) => QUALIFIERS.has(w) && !wa.includes(w))) return 0;
-  return wa.filter((w) => wb.includes(w)).length / Math.min(wa.length, wb.length);
+  const shared = wa.filter((w) => wb.includes(w)).length;
+  // A short title inside a long one ("Oldest living person" in "Most tattooed living person by multiple layers")
+  // is not a match: at least half of the longer title's words must be shared too.
+  if (shared / Math.max(wa.length, wb.length) < 0.5) return Math.min(0.5, shared / Math.min(wa.length, wb.length));
+  return shared / Math.min(wa.length, wb.length);
 }
 
 async function autoDecideTips(sb: SupabaseClient) {
@@ -334,7 +339,9 @@ async function decideTip(sb: SupabaseClient, t: Tip, live: Live[], catId: Map<st
   if ((cur.unit ?? "") !== t.unit) return review(`matches "${cur.title}" but the unit differs (${cur.unit} vs ${t.unit})`);
   const old = cur.value_numeric == null ? null : Number(cur.value_numeric);
   if (old == null || old === 0) return review(`matches "${cur.title}", which has no figure to compare`);
-  const sameHolder = nameKey(cur.holder) !== "" && nameKey(cur.holder) === nameKey(t.proposed_holder);
+  // "Egor Kornev (Russia)" and "Egor Kornev" are the same holder.
+  const hc = nameKey(cur.holder), ht = nameKey(t.proposed_holder);
+  const sameHolder = hc !== "" && ht !== "" && (hc === ht || hc.startsWith(ht + " ") || ht.startsWith(hc + " "));
   if (sameHolder && Math.abs(value - old) / Math.abs(old) < 0.005) return { decision: "duplicate", reason: `already listed as "${cur.title}"`, slug: cur.slug };
   const lower = (cur.better_direction ?? j.better_direction) === "lower";
   const beats = lower ? value < old : value > old;
