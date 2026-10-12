@@ -5,6 +5,7 @@
 // in Chicago post, so the times stay right through daylight saving changes. One post per slot.
 //
 // Which record:
+//   0. A lead story: records.lead_until is in the future and it wasn't posted since its last update.
 //   1. A record the news watcher added or updated in the last 2 days and not yet posted ("New record").
 //   2. Otherwise a record never posted before, from the section posted least recently, so the feed
 //      rotates through sports, nature, space, music and the rest.
@@ -92,7 +93,13 @@ Deno.serve(async (req) => {
     .in("status", ["auto_published", "approved"]).gt("created_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString())
     .order("created_at", { ascending: false });
   let pick: Row | undefined;
-  for (const n of news ?? []) {
+  // 0. A lead story (records.lead_until in the future) goes first, once, if it wasn't posted after it was set to lead.
+  const { data: leads } = await sb.from("records").select(cols + ",lead_until").eq("status", "published")
+    .not("poster_url", "is", null).gt("lead_until", now.toISOString()).order("updated_at", { ascending: false });
+  for (const r of (leads ?? []) as (Row & { updated_at: string })[]) {
+    if (!(Date.parse(lastPost.get(r.id) ?? "") > Date.parse(r.updated_at))) { pick = r; break; }
+  }
+  for (const n of pick ? [] : news ?? []) {
     const title = (n.claude_json as { title?: string } | null)?.title?.trim().toLowerCase();
     const r = all.find((x) => (n.record_id && x.id === n.record_id) || (!n.record_id && title && x.title.toLowerCase() === title));
     if (r && !(Date.parse(lastPost.get(r.id) ?? "") > Date.parse(n.created_at))) { pick = r; break; }
