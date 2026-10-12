@@ -32,7 +32,7 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 const KEY = Deno.env.get("PERPLEXITY_API_KEY") ?? Deno.env.get("PERPLEXITY_AI_KEY");
 const ENDPOINT = "https://api.perplexity.ai/v1/sonar";
 const MODEL = "sonar";
-const AUTO_DAILY_CAP = 5;
+const AUTO_DAILY_CAP = 25;
 const ADMIN_EMAIL = "info@mohrcreativegroup.com";
 const SITE = "https://brokenrecords.com";
 
