@@ -10,7 +10,7 @@
 //      dates within 14 days), which is how rounding in a lb/kg conversion looks.
 // A record we do not track yet is added as a new record when it has a real category, a
 // numeric value, a title we do not already have (and not the same holder and figure as a
-// record in that category under another title), and at least one cited news site.
+// record in that category under another title, or as any record after unit conversion), and at least one cited news site.
 // Everything else waits in the candidates table for review.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -74,6 +74,35 @@ function site(url: string): string | null {
 // Lower case, letters and digits only: "Ian Paton" and "ian  paton." compare equal.
 function norm(s: string | null | undefined): string {
   return (s ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// Converts common units to one base so "45.22 km" and "45220 m" compare equal.
+const UNIT_BASE: Record<string, [string, number]> = {
+  m: ["m", 1], km: ["m", 1000], cm: ["m", 0.01], mm: ["m", 0.001], mi: ["m", 1609.344], miles: ["m", 1609.344], ft: ["m", 0.3048],
+  s: ["s", 1], min: ["s", 60], minutes: ["s", 60], h: ["s", 3600], hours: ["s", 3600], days: ["s", 86400],
+  kg: ["kg", 1], g: ["kg", 0.001], lb: ["kg", 0.45359237], lbs: ["kg", 0.45359237], t: ["kg", 1000],
+};
+function base(v: number | string | null | undefined, unit: string | null | undefined): [string, number] | null {
+  if (v == null || !Number.isFinite(Number(v))) return null;
+  const u = (unit ?? "").trim().toLowerCase();
+  const b = UNIT_BASE[u];
+  return b ? [b[0], Number(v) * b[1]] : [u, Number(v)];
+}
+
+// "NASA Perseverance rover" and "NASA Perseverance Mars rover" name the same holder:
+// every word of the shorter name appears in the longer one.
+function sameHolder(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = norm(a).split(" ").filter(Boolean), y = norm(b).split(" ").filter(Boolean);
+  if (!x.length || !y.length) return false;
+  const [s, l] = x.length <= y.length ? [x, new Set(y)] : [y, new Set(x)];
+  return s.every((w) => l.has(w));
+}
+
+// Same holder and the same figure (within 0.5%) after unit conversion, in any category.
+function sameFigure(r: Rec, it: Item): boolean {
+  const rb = base(r.value_numeric, r.unit), nb = base(it.value_numeric, it.unit);
+  if (!rb || !nb || rb[0] !== nb[0] || rb[1] === 0) return false;
+  return Math.abs(nb[1] - rb[1]) / Math.abs(rb[1]) < 0.005 && sameHolder(r.holder, it.holder);
 }
 
 // True when a report is the current record again: same holder, under 0.5% apart,
@@ -214,7 +243,8 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
   const titleTaken = [...bySlug.values()].some((r) =>
     r.title.toLowerCase() === it.title.trim().toLowerCase() ||
     (r.category_id === catId.get(it.category_slug) && r.value_numeric != null && Number(r.value_numeric) === it.value_numeric &&
-      norm(r.holder) !== "" && norm(r.holder) === norm(it.holder))
+      norm(r.holder) !== "" && norm(r.holder) === norm(it.holder)) ||
+    sameFigure(r, it)
   ) || bySlug.has(slug);
   const isNew = !rec && AUTO_PUBLISH && checks.has_source && catId.has(it.category_slug) && Number.isFinite(it.value_numeric)
     && !!it.title?.trim() && !!it.holder?.trim() && !!it.unit?.trim() && !!slug && !titleTaken;
@@ -245,7 +275,7 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
     }).select("id").single();
     if (nErr) return { ...summary, status: "error", error: nErr.message };
     await sb.from("record_sources").insert(fallback.slice(0, 4).map((u) => ({ record_id: created.id, url: u, publisher: site(u), license: null })));
-    bySlug.set(slug, { id: created.id, slug, title: it.title.trim() } as Rec);
+    bySlug.set(slug, { id: created.id, slug, title: it.title.trim(), holder: it.holder.trim(), value_numeric: it.value_numeric, unit: it.unit.trim(), category_id: catId.get(it.category_slug) } as Rec);
     return { ...summary, status: "created", slug };
   }
   if (!publish) return { ...summary, status: "queued_for_review" };
