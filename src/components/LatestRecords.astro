@@ -25,7 +25,7 @@ const stood = (oldOn: string | null, newOn: string | null) => {
 // "Today", "Yesterday", then "Saturday, Oct 11", by the day the record was set (Chicago time).
 const today = chicagoDay(0), yesterday = chicagoDay(1);
 const dayLabel = (d: string | null) =>
-  d === today ? "Today" : d === yesterday ? "Yesterday" : fmtDate(d, { weekday: "long", month: "short", day: "numeric" });
+  d === today ? "Today" : d === yesterday ? "Yesterday" : fmtDate(d, { weekday: "short", month: "short", day: "numeric" });
 
 type Group = { label: string | null; broken: LatestItem[]; fresh: LatestItem[] };
 const groups: Group[] = [];
@@ -54,57 +54,84 @@ const meta = byDay
     </span>
   </div>
 
-  {groups.map((g) => (
-    <div class="day">
-      {g.label && <h3 class="day-h">{g.label}</h3>}
-      {g.broken.length > 0 && (
-        <div class="broken-row">
-          {g.broken.map((r) => (
-            <a class="bcard" href={`/records/${r.slug}`}>
-              <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
-              <div class="bbody">
-                <span><span class="label broken">Record broken</span></span>
-                <h3>{r.title}</h3>
-                <div class="flap">
-                  <div class="old">
-                    <span class="tag">{stood(r.old_achieved_on, r.achieved_on) ?? "Previous"}</span>
-                    <span class="val">{r.old_value}</span>
-                    <span class="who">{r.old_holder}{r.old_achieved_on && ` · ${year(r.old_achieved_on)}`}</span>
-                  </div>
-                  <div class="now">
-                    <span class="tag">New record</span>
-                    <span class="val">{r.display_value}</span>
-                    <span class="who">{r.holder}{r.achieved_on && ` · ${fmtDate(r.achieved_on, { month: "short", day: "numeric", year: "numeric" })}`}</span>
-                  </div>
-                </div>
-                {r.category_name && <span class="bfoot">{r.category_name}</span>}
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
-      {g.fresh.length > 0 && (
-        <div class="new-row">
-          {g.fresh.map((r) => (
-            <a class="ncard" href={`/records/${r.slug}`}>
-              <span class="label new">New</span>
-              <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
-              <div class="nbody">
-                <h3>{r.title}</h3>
-                <span class="val">{r.display_value}</span>
-                <span class="who">{r.holder}</span>
-                {r.achieved_on && <span class="when">{fmtDate(r.achieved_on, { month: "short", day: "numeric" })}</span>}
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
+  {byDay ? (
+    <div class="week-grid">
+      {items.map((r) => (
+        <a class="ncard wcard" href={`/records/${r.slug}`}>
+          <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}>
+            <span class:list={["label", r.is_broken ? "broken" : "new"]}>{r.is_broken ? "Record broken" : "New"}</span>
+            {r.achieved_on && <span class="day-chip">{dayLabel(r.achieved_on)}</span>}
+          </div>
+          <div class="nbody">
+            <h3>{r.title}</h3>
+            <span class="val">{r.display_value}</span>
+            <span class="who">{r.holder}</span>
+            {r.is_broken && r.old_value && <span class="beat"><b>Beat</b>{" "}{r.old_value}{r.old_holder && ` · ${r.old_holder}`}</span>}
+          </div>
+        </a>
+      ))}
     </div>
-  ))}
+  ) : (<>
+  {groups.map((g) => (
+      <div class="day">
+        {g.label && <h3 class="day-h">{g.label}</h3>}
+        {g.broken.length > 0 && (
+          <div class="broken-row">
+            {g.broken.map((r) => (
+              <a class="bcard" href={`/records/${r.slug}`}>
+                <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+                <div class="bbody">
+                  <span><span class="label broken">Record broken</span></span>
+                  <h3>{r.title}</h3>
+                  <div class="flap">
+                    <div class="old">
+                      <span class="tag">{stood(r.old_achieved_on, r.achieved_on) ?? "Previous"}</span>
+                      <span class="val">{r.old_value}</span>
+                      <span class="who">{r.old_holder}{r.old_achieved_on && ` · ${year(r.old_achieved_on)}`}</span>
+                    </div>
+                    <div class="now">
+                      <span class="tag">New record</span>
+                      <span class="val">{r.display_value}</span>
+                      <span class="who">{r.holder}{r.achieved_on && ` · ${fmtDate(r.achieved_on, { month: "short", day: "numeric", year: "numeric" })}`}</span>
+                    </div>
+                  </div>
+                  {r.category_name && <span class="bfoot">{r.category_name}</span>}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+        {g.fresh.length > 0 && (
+          <div class="new-row">
+            {g.fresh.map((r) => (
+              <a class="ncard" href={`/records/${r.slug}`}>
+                <span class="label new">New</span>
+                <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+                <div class="nbody">
+                  <h3>{r.title}</h3>
+                  <span class="val">{r.display_value}</span>
+                  <span class="who">{r.holder}</span>
+                  {r.achieved_on && <span class="when">{fmtDate(r.achieved_on, { month: "short", day: "numeric" })}</span>}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    ))}
+  </>)}
 </section>
 )}
 
 <style>
+  .week-grid{display:grid;gap:1rem;grid-template-columns:1fr}
+  @media(min-width:36rem){.week-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(min-width:64rem){.week-grid{grid-template-columns:repeat(4,1fr)}}
+  .wcard .poster{position:relative;aspect-ratio:16/10}
+  .wcard .label{position:absolute;top:.5rem;left:.5rem}
+  .day-chip{position:absolute;top:.5rem;right:.5rem;font:700 .72rem/1 var(--display);letter-spacing:.04em;padding:.35rem .5rem;border-radius:2px;background:rgba(10,16,22,.78);color:#fff}
+  .wcard .beat{font:500 .8rem/1.3 var(--display);color:var(--ink-soft);margin-top:auto;padding-top:.35rem;border-top:1px solid var(--rule)}
+  .wcard .beat b{color:var(--red);font-weight:800}
   .day + .day{margin-top:2rem}
   .day-h{font:800 .85rem/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 .9rem;display:flex;align-items:center;gap:.75rem}
   .day-h::after{content:"";flex:1;height:1px;background:var(--rule)}
