@@ -38,25 +38,25 @@ export function chicagoDay(back = 0): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(d);
 }
 
-export type JustBroken = { items: LatestItem[]; days: 3 | 7 };
+export type JustBroken = { items: LatestItem[]; days: 7 | 14 };
 
 /**
- * The home page "Just broken" section: records actually SET in the last 3 days (today, yesterday,
- * the day before), by the date they were set, not the date we found them. A record set weeks ago
- * that we only just added stays out; it appears on /latest instead. If nothing was set in 3 days,
- * it widens to 7 so the section is never empty or stale.
+ * The home page "Just Broken This Week" section: records actually SET in the last 7 days (today and
+ * the 6 days before), by the date they were set, not the date we found them. A record set weeks ago
+ * that we only just added stays out; it appears on /latest instead. If nothing was set in 7 days,
+ * it widens to 14 so the section is never empty.
  */
-export async function getJustBroken(limit = 12): Promise<JustBroken> {
+export async function getJustBroken(limit = 20): Promise<JustBroken> {
   const q = (from: string) =>
     rest<LatestItem[]>(
       `latest_feed?select=*&achieved_on=gte.${from}&achieved_on=lte.${chicagoDay(0)}&order=achieved_on.desc,is_broken.desc,changed_at.desc&limit=${limit}`
     );
   try {
-    const three = await q(chicagoDay(2));
-    if (three.length) return { items: three, days: 3 };
-    return { items: await q(chicagoDay(6)), days: 7 };
+    const week = await q(chicagoDay(6));
+    if (week.length) return { items: week, days: 7 };
+    return { items: await q(chicagoDay(13)), days: 14 };
   } catch (err) {
     console.error("getJustBroken failed", err);
-    return { items: [], days: 3 };
+    return { items: [], days: 7 };
   }
 }

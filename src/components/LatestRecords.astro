@@ -8,10 +8,10 @@ interface Props {
   showAllLink?: boolean;
   /** Home page: group cards under Today / Yesterday / weekday headings by the date each record was set. */
   byDay?: boolean;
-  /** How many days the home section covers (3, or 7 when nothing was set in 3 days). */
+  /** How many days the home section covers (7, or 14 when nothing was set in 7 days). */
   window?: number;
 }
-const { items, heading = "Just broken", showAllLink = true, byDay = false, window = 3 } = Astro.props;
+const { items, heading = "Just broken", showAllLink = true, byDay = false, window = 7 } = Astro.props;
 
 const fmtDate = (d: string | null, opts: Intl.DateTimeFormatOptions) =>
   d ? new Date(d + (d.length === 10 ? "T12:00:00Z" : "")).toLocaleDateString("en-US", { timeZone: "UTC", ...opts }) : "";
@@ -41,7 +41,7 @@ if (byDay) {
 }
 const latestChange = items.reduce((m, i) => (i.changed_at > m ? i.changed_at : m), "");
 const meta = byDay
-  ? (window > 3 ? "Records set this week" : "Records set in the last 3 days")
+  ? (window > 7 ? "Records set in the last 2 weeks" : "Records set in the last 7 days")
   : `Checked daily${latestChange ? ` · Updated ${fmtDate(latestChange.slice(0, 10), { month: "short", day: "numeric" })}` : ""}`;
 ---
 {items.length > 0 && (
