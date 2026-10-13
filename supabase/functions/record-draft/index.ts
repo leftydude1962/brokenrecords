@@ -130,7 +130,8 @@ Deno.serve(async (req) => {
   // Tips that are researched but not yet decided (just now, or in an earlier run) get the
   // automatic check: publish when everything holds up, otherwise leave them for review.
   const auto = await autoDecideTips(sb).catch((e) => ({ error: String(e).slice(0, 200) }));
-  return json({ done: results.length, results, auto });
+  const batch = await autoDecideBatch(sb).catch((e) => ({ error: String(e).slice(0, 200) }));
+  return json({ done: results.length, results, auto, batch });
 });
 
 async function research(sb: SupabaseClient, r: Row, cats: string[]) {
@@ -357,6 +358,113 @@ async function decideTip(sb: SupabaseClient, t: Tip, live: Live[], catId: Map<st
   await updateExisting(sb, t, cur, name);
   await notify(t, cur.slug, cur.title, "update");
   return { decision: "updated", reason: `beat "${cur.title}", all checks passed`, slug: cur.slug, recordId: cur.id };
+}
+
+// ---------- Automatic decision for planned topic batches ----------
+// Topics Claude queued in a batch (claude_json.batch) publish by themselves only when the research is
+// solid: high confidence, a real holder and figure with a unit, 2+ independent websites, a real
+// category, and no record on the site that looks like the same topic. Anything else stays pending
+// with the reason, for the morning report or a person to decide.
+const PLACEHOLDER = /^((unknown|n\/a|none|tbd|unclear|various|multiple)\b|not (established|known|found|available|applicable)\b|no (reliabl|verifi|current|known|clear|single|official))/i;
+
+async function autoDecideBatch(sb: SupabaseClient) {
+  const { data } = await sb.from("candidates")
+    .select("id,category_guess,source_urls,proposed_holder,proposed_value_numeric,proposed_value_text,unit,claude_json")
+    .eq("status", "pending").eq("claude_json->>kind", "draft").is("claude_json->>source", null)
+    .not("claude_json->>batch", "is", null)
+    .eq("claude_json->>state", "done").is("claude_json->>auto_decision", null).limit(4);
+  const rows = (data ?? []) as Tip[];
+  if (!rows.length) return [];
+  const { data: liveRows } = await sb.from("records").select("id,slug,title").eq("status", "published");
+  const live = (liveRows ?? []) as { id: string; slug: string; title: string }[];
+  const { data: cats } = await sb.from("categories").select("id,slug").not("parent_id", "is", null);
+  const catId = new Map((cats ?? []).map((c) => [c.slug, c.id]));
+
+  const out: unknown[] = [];
+  for (const t of rows) {
+    const j = t.claude_json;
+    const title = String(j.title ?? "").trim();
+    const sites = new Set((t.source_urls ?? []).map(site).filter(Boolean));
+    const category = t.category_guess ? (catId.get(t.category_guess) as string | undefined) : undefined;
+    const match = live.map((r) => ({ r, s: titleScore(title, r.title) })).filter((m) => m.s >= 0.6).sort((a, b) => b.s - a.s)[0];
+    const num = t.proposed_value_numeric == null ? NaN : Number(t.proposed_value_numeric);
+    let reason: string | null =
+      j.confidence !== "high" ? `research confidence is ${j.confidence ?? "unknown"}, not high`
+      : !t.proposed_holder || PLACEHOLDER.test(t.proposed_holder) ? "no real holder"
+      : !t.proposed_value_text || PLACEHOLDER.test(t.proposed_value_text) ? "no real figure"
+      : !Number.isFinite(num) || !t.unit ? "no numeric figure or unit"
+      : !category ? "no category"
+      : sites.size < 2 ? `only ${sites.size} independent source${sites.size === 1 ? "" : "s"}`
+      : match ? `may duplicate "${match.r.title}" (${match.r.slug})`
+      : null;
+    let decision = "review", slug: string | undefined, recordId: string | undefined;
+    if (!reason) reason = scaleProblem(t.proposed_value_text!, num, t.unit!);
+    let challenge: Record<string, unknown> | undefined;
+    if (!reason) {
+      challenge = await challengeIt(title, t.proposed_holder!, t.proposed_value_text!, String(j.better_direction ?? "higher"));
+      // A failed search (rate limit, timeout) is retried on the next run instead of being held.
+      if (String(challenge.note ?? "").startsWith("challenge search failed")) continue;
+      if (challenge.agrees !== true) reason = `second search disagrees: ${String(challenge.note ?? "").slice(0, 200)}`;
+    }
+    if (!reason) {
+      const rec = await publishNew(sb, t, title, category!, null);
+      decision = "published"; slug = rec.slug; recordId = rec.id;
+      live.push({ id: rec.id, slug: rec.slug, title });
+    }
+    await sb.from("candidates").update({
+      claude_json: { ...j, auto_decision: decision, auto_reason: reason ?? "all checks passed", auto_at: new Date().toISOString(), ...(challenge ? { challenge } : {}), ...(slug ? { applied: "new", slug } : {}) },
+      ...(decision === "published" ? { status: "approved", record_id: recordId } : {}),
+    }).eq("id", t.id);
+    out.push({ id: t.id, title, decision, reason, slug });
+  }
+  return out;
+}
+
+// The stored number must match the written figure: "$4.27 trillion" is 4,270,000,000,000 USD, not 4.27,
+// and "751.4 km" stored in metres is 751,400. Returns a reason when they disagree, otherwise null.
+function scaleProblem(text: string, n: number, unit: string): string | null {
+  const m = text.replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*(thousand|million|billion|trillion|[kmb]n?\b)?\s*([a-z°³²/]+)?/i);
+  if (!m) return null;
+  let x = Number(m[1]);
+  const word = (m[2] ?? "").toLowerCase();
+  const scale: Record<string, number> = { thousand: 1e3, million: 1e6, m: 1e6, mn: 1e6, billion: 1e9, b: 1e9, bn: 1e9, trillion: 1e12 };
+  if (unit === "USD" && scale[word]) x *= scale[word];
+  else if (word === "thousand") x *= 1e3;
+  const tu = (m[3] ?? "").toLowerCase();
+  if (unit === "m" && (tu === "km" || word === "k")) x *= 1000;
+  if (unit === "kg" && tu === "g") x /= 1000;
+  if (unit === "kg" && (tu === "t" || tu === "tonnes" || tu === "tons")) x *= 1000;
+  if (/:/.test(text) && unit === "s") return null; // clock times are checked by the reader, not here
+  if (!x || !n) return null;
+  const r = n / x;
+  if (unit === "USD" && (r < 0.9 || r > 1.1)) return `figure "${text}" does not match the stored ${n} USD`;
+  if (r > 500 || r < 0.002) return `figure "${text}" does not match the stored ${n} ${unit}`;
+  if (unit === "m" && tu === "km" && (r < 0.9 || r > 1.1)) return `figure "${text}" does not match the stored ${n} m`;
+  return null;
+}
+
+// A second, skeptical search: try to find a record that beats the researched one.
+async function challengeIt(title: string, holder: string, value: string, direction: string) {
+  const schema = { type: "object", properties: { agrees: { type: "boolean" }, better_holder: { type: ["string", "null"] }, better_value: { type: ["string", "null"] }, note: { type: "string" } }, required: ["agrees", "better_holder", "better_value", "note"] };
+  const user = `Claim: the current world record for "${title}" is held by ${holder}, with ${value}. A ${direction} figure is better.\n` +
+    "Search for credible sources. Look hard for a different holder or a better figure that is widely accepted as the record today, " +
+    "including a more recent record, a larger or faster example, or a wrong figure. Also say false if the holder or figure is wrong. " +
+    "Set agrees to true only if the claim is correct and current. Plain words. No em dashes. Return agrees, better_holder, better_value and a one-sentence note.";
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [{ role: "system", content: "You fact-check world records for a records website. Today is " + new Date().toISOString().slice(0, 10) + "." }, { role: "user", content: user }],
+      response_format: { type: "json_schema", json_schema: { name: "challenge", schema } },
+    }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (!res.ok) return { agrees: false, note: `challenge search failed (${res.status})` };
+  const j = await res.json();
+  try {
+    return JSON.parse(String(j?.choices?.[0]?.message?.content ?? "{}").replace(/^```(json)?|```$/g, "").trim());
+  } catch { return { agrees: false, note: "challenge answer was not readable" }; }
 }
 
 async function addSources(sb: SupabaseClient, recordId: string, urls: string[]) {
