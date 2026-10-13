@@ -5,9 +5,9 @@ import LatestRecords from "../components/LatestRecords.astro";
 import TipPrompt from "../components/TipPrompt.astro";
 import AlertSignup from "../components/AlertSignup.astro";
 import { getTaxonomy, getRecords, cacheFor, type RecordRow } from "../lib/data";
-import { getLatest } from "../lib/latest";
+import { getJustBroken } from "../lib/latest";
 
-const [{ sections, sectionOf }, records, latest] = await Promise.all([getTaxonomy(), getRecords(), getLatest(8)]);
+const [{ sections, sectionOf }, records, latest] = await Promise.all([getTaxonomy(), getRecords(), getJustBroken(12)]);
 
 // One card per section. The section's featured record (the one with a clip) leads; if a section
 // has none, its first record with an image stands in, then any record.
@@ -41,7 +41,7 @@ const jsonLd = {
   </section>
 
   <div class="wrap">
-    <LatestRecords items={latest} />
+    <LatestRecords items={latest.items} byDay window={latest.days} />
     <AlertSignup source="home" />
   </div>
 

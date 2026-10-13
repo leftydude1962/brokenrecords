@@ -9,9 +9,9 @@ import { cacheFor } from "../lib/data";
 const items = await getLatest(48);
 cacheFor(3600, Astro.response);
 ---
-<Base title="Latest world records | Broken Records" description="World records broken or newly set in the last month, checked daily with sources.">
+<Base title="Latest world records | Broken Records" description="World records we added or updated in the last month, including records set a little earlier. Checked daily, with sources.">
   <div class="wrap">
-    <LatestRecords items={items} heading="Latest records" showAllLink={false} />
+    <LatestRecords items={items} heading="Recently added records" showAllLink={false} />
     {items.length === 0 && <p>Nothing new in the last 30 days. Check back tomorrow.</p>}
     <AlertSignup source="latest" />
     <TipPrompt variant="band" />

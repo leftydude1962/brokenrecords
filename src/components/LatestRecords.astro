@@ -1,15 +1,17 @@
 ---
 import type { LatestItem } from "../lib/latest";
+import { chicagoDay } from "../lib/latest";
 
 interface Props {
   items: LatestItem[];
   heading?: string;
   showAllLink?: boolean;
+  /** Home page: group cards under Today / Yesterday / weekday headings by the date each record was set. */
+  byDay?: boolean;
+  /** How many days the home section covers (3, or 7 when nothing was set in 3 days). */
+  window?: number;
 }
-const { items, heading = "Just broken", showAllLink = true } = Astro.props;
-
-const broken = items.filter((i) => i.is_broken);
-const fresh = items.filter((i) => !i.is_broken);
+const { items, heading = "Just broken", showAllLink = true, byDay = false, window = 3 } = Astro.props;
 
 const fmtDate = (d: string | null, opts: Intl.DateTimeFormatOptions) =>
   d ? new Date(d + (d.length === 10 ? "T12:00:00Z" : "")).toLocaleDateString("en-US", { timeZone: "UTC", ...opts }) : "";
@@ -19,65 +21,94 @@ const stood = (oldOn: string | null, newOn: string | null) => {
   const yrs = Math.floor((Date.parse(newOn) - Date.parse(oldOn)) / 31557600000);
   return yrs >= 2 ? `Stood ${yrs} years` : null;
 };
+
+// "Today", "Yesterday", then "Saturday, Oct 11", by the day the record was set (Chicago time).
+const today = chicagoDay(0), yesterday = chicagoDay(1);
+const dayLabel = (d: string | null) =>
+  d === today ? "Today" : d === yesterday ? "Yesterday" : fmtDate(d, { weekday: "long", month: "short", day: "numeric" });
+
+type Group = { label: string | null; broken: LatestItem[]; fresh: LatestItem[] };
+const groups: Group[] = [];
+if (byDay) {
+  for (const it of items) {
+    const label = dayLabel(it.achieved_on);
+    let g = groups.find((x) => x.label === label);
+    if (!g) groups.push((g = { label, broken: [], fresh: [] }));
+    (it.is_broken ? g.broken : g.fresh).push(it);
+  }
+} else {
+  groups.push({ label: null, broken: items.filter((i) => i.is_broken), fresh: items.filter((i) => !i.is_broken) });
+}
 const latestChange = items.reduce((m, i) => (i.changed_at > m ? i.changed_at : m), "");
+const meta = byDay
+  ? (window > 3 ? "Records set this week" : "Records set in the last 3 days")
+  : `Checked daily${latestChange ? ` · Updated ${fmtDate(latestChange.slice(0, 10), { month: "short", day: "numeric" })}` : ""}`;
 ---
 {items.length > 0 && (
 <section class="latest" aria-labelledby="latest-h">
   <div class="latest-head">
     <h2 id="latest-h">{heading}</h2>
     <span class="meta">
-      Checked daily{latestChange && <> · Updated {fmtDate(latestChange.slice(0, 10), { month: "short", day: "numeric" })}</>}
-      {showAllLink && <> · <a href="/latest">See all latest records &rarr;</a></>}
+      {meta}
+      {showAllLink && <> · <a href="/latest">More recent records &rarr;</a></>}
     </span>
   </div>
 
-  {broken.length > 0 && (
-    <div class="broken-row">
-      {broken.map((r) => (
-        <a class="bcard" href={`/records/${r.slug}`}>
-          <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
-          <div class="bbody">
-            <span><span class="label broken">Record broken</span></span>
-            <h3>{r.title}</h3>
-            <div class="flap">
-              <div class="old">
-                <span class="tag">{stood(r.old_achieved_on, r.achieved_on) ?? "Previous"}</span>
-                <span class="val">{r.old_value}</span>
-                <span class="who">{r.old_holder}{r.old_achieved_on && ` · ${year(r.old_achieved_on)}`}</span>
+  {groups.map((g) => (
+    <div class="day">
+      {g.label && <h3 class="day-h">{g.label}</h3>}
+      {g.broken.length > 0 && (
+        <div class="broken-row">
+          {g.broken.map((r) => (
+            <a class="bcard" href={`/records/${r.slug}`}>
+              <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+              <div class="bbody">
+                <span><span class="label broken">Record broken</span></span>
+                <h3>{r.title}</h3>
+                <div class="flap">
+                  <div class="old">
+                    <span class="tag">{stood(r.old_achieved_on, r.achieved_on) ?? "Previous"}</span>
+                    <span class="val">{r.old_value}</span>
+                    <span class="who">{r.old_holder}{r.old_achieved_on && ` · ${year(r.old_achieved_on)}`}</span>
+                  </div>
+                  <div class="now">
+                    <span class="tag">New record</span>
+                    <span class="val">{r.display_value}</span>
+                    <span class="who">{r.holder}{r.achieved_on && ` · ${fmtDate(r.achieved_on, { month: "short", day: "numeric", year: "numeric" })}`}</span>
+                  </div>
+                </div>
+                {r.category_name && <span class="bfoot">{r.category_name}</span>}
               </div>
-              <div class="now">
-                <span class="tag">New record</span>
+            </a>
+          ))}
+        </div>
+      )}
+      {g.fresh.length > 0 && (
+        <div class="new-row">
+          {g.fresh.map((r) => (
+            <a class="ncard" href={`/records/${r.slug}`}>
+              <span class="label new">New</span>
+              <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
+              <div class="nbody">
+                <h3>{r.title}</h3>
                 <span class="val">{r.display_value}</span>
-                <span class="who">{r.holder}{r.achieved_on && ` · ${fmtDate(r.achieved_on, { month: "short", day: "numeric", year: "numeric" })}`}</span>
+                <span class="who">{r.holder}</span>
+                {r.achieved_on && <span class="when">{fmtDate(r.achieved_on, { month: "short", day: "numeric" })}</span>}
               </div>
-            </div>
-            {r.category_name && <span class="bfoot">{r.category_name}</span>}
-          </div>
-        </a>
-      ))}
+            </a>
+          ))}
+        </div>
+      )}
     </div>
-  )}
-
-  {fresh.length > 0 && (
-    <div class="new-row">
-      {fresh.map((r) => (
-        <a class="ncard" href={`/records/${r.slug}`}>
-          <span class="label new">New</span>
-          <div class="poster" style={r.poster_url ? `background-image:url('${r.poster_url}')` : undefined} role="img" aria-label={r.title}></div>
-          <div class="nbody">
-            <h3>{r.title}</h3>
-            <span class="val">{r.display_value}</span>
-            <span class="who">{r.holder}</span>
-            {r.achieved_on && <span class="when">{fmtDate(r.achieved_on, { month: "short", day: "numeric" })}</span>}
-          </div>
-        </a>
-      ))}
-    </div>
-  )}
+  ))}
 </section>
 )}
 
 <style>
+  .day + .day{margin-top:2rem}
+  .day-h{font:800 .85rem/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 .9rem;display:flex;align-items:center;gap:.75rem}
+  .day-h::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .day .new-row:first-child{margin-top:0}
   .latest{padding:2.5rem 0 3rem}
   .latest-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem 1.5rem;border-bottom:2px solid var(--ink);padding-bottom:.6rem;margin-bottom:1.5rem}
   .latest-head h2{font-weight:850;font-stretch:112%;font-size:clamp(1.6rem,1.2rem + 1.6vw,2.4rem);letter-spacing:-.01em}
