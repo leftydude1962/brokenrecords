@@ -89,16 +89,22 @@ Deno.serve(async (req) => {
   const limit = Math.max(1, Math.min(Number(body.limit ?? 3), 8));
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 
-  const { data, error } = await sb
+  // Visitor and news tips go first, so a big batch of planned topics never delays a fresh tip.
+  const queue = () => sb
     .from("candidates")
     .select("id,category_guess,claude_json")
     .eq("status", "pending")
     .eq("claude_json->>kind", "draft")
     .eq("claude_json->>state", "todo")
-    .order("created_at", { ascending: true })
-    .limit(limit);
+    .order("created_at", { ascending: true });
+  const { data: tips, error } = await queue().eq("claude_json->>source", "tip").limit(limit);
   if (error) return json({ error: error.message }, 500);
-  const rows = (data ?? []) as Row[];
+  let rows = (tips ?? []) as Row[];
+  if (rows.length < limit) {
+    const { data: rest, error: e2 } = await queue().is("claude_json->>source", null).limit(limit - rows.length);
+    if (e2) return json({ error: e2.message }, 500);
+    rows = rows.concat((rest ?? []) as Row[]);
+  }
 
   // Claim the rows first, so an overlapping run does not research the same topic twice.
   for (const r of rows) {
