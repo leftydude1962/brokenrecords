@@ -18,10 +18,11 @@ const featured = sections
 cacheFor(3600, Astro.response);
 
 // Totals for the hero. The total comes from the category counts, not records.length, because the
-// records list is capped at 1,000 rows by the database API. "Broken this week" only counts records
-// set in the last 7 days; it is left out when there are none.
+// records list is capped at 1,000 rows by the database API. "This week" counts records set or broken
+// in the last 7 days (the same list as the Just Broken section); it is left out when there are none.
+// That list is loaded 20 at a time, so 20 shows as "20+".
 const total = sections.reduce((n, s) => n + (s.count ?? 0), 0);
-const brokenThisWeek = latest.days === 7 ? latest.items.filter((i) => i.is_broken).length : 0;
+const thisWeek = latest.days === 7 ? latest.items.length : 0;
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const jsonLd = {
@@ -42,7 +43,7 @@ const jsonLd = {
       <h1>World records, <span class="nowrap">kept current.</span></h1>
       <p class="stats" aria-label="Site totals">
         <span><b>{fmt(total)}</b> world records in {sections.length} categories</span>
-        {brokenThisWeek > 0 && <a href="#latest-h"><b>{brokenThisWeek}</b> broken this week</a>}
+        {thisWeek > 0 && <a href="#latest-h"><b>{thisWeek >= 20 ? "20+" : thisWeek}</b> set or broken this week</a>}
         <span>every record sourced</span>
       </p>
       <p class="lede muted">
