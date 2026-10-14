@@ -125,6 +125,9 @@ async function askPerplexity(categories: string[], records: Rec[], recency: stri
     "You track official world records. Report only records that were newly SET or officially RATIFIED in the requested time window, " +
     "recognized by the sport's governing body or by an authoritative organization, and reported by reputable outlets. " +
     "Never report a record that is merely threatened, approached, or tied unless it is officially shared. Never invent values. " +
+    "Leave out stunt records: records staged mainly to set a record, such as the most of something done in one minute, " +
+    "the largest of something assembled, built, cooked or poured for an event, crowd gatherings, human images, and novelty body records. " +
+    "Competition results in sports, and records in nature, science, space, engineering, money and culture, are in scope. " +
     "If nothing qualifies, return an empty items list.";
   const user =
     `Time window: the past ${recency}. Areas: ${categories.join(", ")}.\n\n` +
@@ -207,7 +210,20 @@ Deno.serve(async (req) => {
   return Response.json({ dryRun, recency, autoPublish: AUTO_PUBLISH, totalCost, results });
 });
 
+// Staged stunt records stay off the site (Broken Records covers real records, not paid stunts).
+// Only new records are filtered: a new value for a record the site already tracks still goes through.
+const STUNT = [
+  /^most\b.*\bin (one|a|\d+(\.\d+)?) (seconds?|minutes?)\b/i,
+  /\bhuman (image|sentence|chain|mosaic)\b/i,
+  /\blargest (gathering|group|crowd|serving|human)\b/i,
+  /^(?!.*\b(space|orbit)\b).*\bmost people\b/i,
+  /\blargest\b.*\b(assembled|cooked|baked|poured|made by)\b/i,
+  /\b(longest|most) (fingernails|nails|piercings|tattoos)\b/i,
+];
+const isStunt = (title: string) => STUNT.some((re) => re.test(title));
+
 async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<string>, bySlug: Map<string, Rec>, catId: Map<string, string>, dryRun: boolean) {
+  if (!(it.record_slug && bySlug.has(it.record_slug)) && isStunt(it.title ?? "")) return { title: it.title, outcome: "skipped: stunt record" };
   // Only URLs that appeared in the actual search results count. The model's own list can't add sources.
   const urls = [...new Set((it.source_urls ?? []).filter((u) => cited.has(u)))];
   const fallback = urls.length ? urls : [...cited];
