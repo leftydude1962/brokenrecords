@@ -372,7 +372,7 @@ async function autoDecideBatch(sb: SupabaseClient) {
     .select("id,category_guess,source_urls,proposed_holder,proposed_value_numeric,proposed_value_text,unit,claude_json")
     .eq("status", "pending").eq("claude_json->>kind", "draft").is("claude_json->>source", null)
     .not("claude_json->>batch", "is", null)
-    .eq("claude_json->>state", "done").is("claude_json->>auto_decision", null).limit(4);
+    .eq("claude_json->>state", "done").is("claude_json->>auto_decision", null).limit(8);
   const rows = (data ?? []) as Tip[];
   if (!rows.length) return [];
   const { data: liveRows } = await sb.from("records").select("id,slug,title").eq("status", "published");
@@ -407,9 +407,12 @@ async function autoDecideBatch(sb: SupabaseClient) {
       if (challenge.agrees !== true) reason = `second search disagrees: ${String(challenge.note ?? "").slice(0, 200)}`;
     }
     if (!reason) {
-      const rec = await publishNew(sb, t, title, category!, null);
-      decision = "published"; slug = rec.slug; recordId = rec.id;
-      live.push({ id: rec.id, slug: rec.slug, title });
+      // One bad row must not block the rest of the queue: a failed insert is held with the error.
+      try {
+        const rec = await publishNew(sb, t, title, category!, null);
+        decision = "published"; slug = rec.slug; recordId = rec.id;
+        live.push({ id: rec.id, slug: rec.slug, title });
+      } catch (e) { reason = `publish failed: ${String(e).slice(0, 150)}`; }
     }
     await sb.from("candidates").update({
       claude_json: { ...j, auto_decision: decision, auto_reason: reason ?? "all checks passed", auto_at: new Date().toISOString(), ...(challenge ? { challenge } : {}), ...(slug ? { applied: "new", slug } : {}) },
@@ -473,6 +476,9 @@ async function addSources(sb: SupabaseClient, recordId: string, urls: string[]) 
   if (rows.length) await sb.from("record_sources").insert(rows);
 }
 
+// The date column takes a full date only. "1990" or "1990-05" from the research is dropped, not guessed.
+const fullDate = (d: unknown) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+
 async function publishNew(sb: SupabaseClient, t: Tip, title: string, categoryId: string, name: string | null) {
   const j = t.claude_json;
   const base = title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "record";
@@ -485,7 +491,7 @@ async function publishNew(sb: SupabaseClient, t: Tip, title: string, categoryId:
   const now = new Date().toISOString();
   const { data: rec, error } = await sb.from("records").insert({
     slug, category_id: categoryId, title, holder: t.proposed_holder, value_text: t.proposed_value_text, value_numeric: t.proposed_value_numeric,
-    unit: t.unit, achieved_on: j.achieved_on ?? null, location: j.location ?? null, governing_body: j.governing_body ?? null,
+    unit: t.unit, achieved_on: fullDate(j.achieved_on), location: j.location ?? null, governing_body: j.governing_body ?? null,
     better_direction: j.better_direction === "lower" ? "lower" : "higher", status: "published", tipped_by: name,
     last_verified_at: now, last_checked_at: now, updated_at: now,
     visual_prompt: `A cinematic scene that represents this world record: ${title}. No people's faces.`,
@@ -510,7 +516,7 @@ async function updateExisting(sb: SupabaseClient, t: Tip, cur: Live, name: strin
   await addSources(sb, cur.id, t.source_urls ?? []);
   const { error } = await sb.from("records").update({
     holder: t.proposed_holder, value_text: t.proposed_value_text, value_numeric: t.proposed_value_numeric,
-    achieved_on: j.achieved_on ?? null, location: j.location ?? cur.location, governing_body: j.governing_body ?? cur.governing_body,
+    achieved_on: fullDate(j.achieved_on), location: j.location ?? cur.location, governing_body: j.governing_body ?? cur.governing_body,
     tipped_by: name, last_verified_at: now, last_checked_at: now, updated_at: now,
   }).eq("id", cur.id);
   if (error) throw new Error(error.message);
