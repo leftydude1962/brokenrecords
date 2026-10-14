@@ -98,8 +98,17 @@ export async function getRecords(opts: { categoryId?: string; categoryIds?: stri
   let q = `records?select=${RECORD_SELECT}&status=eq.published&order=updated_at.desc`;
   if (opts.categoryId) q += `&category_id=eq.${opts.categoryId}`;
   if (opts.categoryIds?.length) q += `&category_id=in.(${opts.categoryIds.join(",")})`;
-  if (opts.limit) q += `&limit=${opts.limit}`;
-  return rest<RecordRow[]>(q);
+  if (opts.limit) return rest<RecordRow[]>(q + `&limit=${opts.limit}`);
+  // The database API returns at most 1,000 rows per request, so read the full list in pages.
+  // The id tiebreak keeps the order stable, so no record is skipped or repeated between pages.
+  const PAGE = 1000;
+  const all: RecordRow[] = [];
+  for (let offset = 0; offset < 50_000; offset += PAGE) {
+    const page = await rest<RecordRow[]>(`${q},id.asc&limit=${PAGE}&offset=${offset}`);
+    all.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return all;
 }
 
 export async function getRecord(slug: string): Promise<RecordRow | null> {
