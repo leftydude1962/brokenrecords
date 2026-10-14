@@ -165,6 +165,7 @@ async function triage(list: Entry[]): Promise<{ verdicts: Verdict[]; cost: numbe
     "or an all-time record in nature, weather, science, space, money or culture (for example the latest-forming hurricane on record, the most expensive painting sold). " +
     "False for: course, meet, club, team, franchise, school, league-season or personal records; attempts that failed or are planned; " +
     "records only mentioned in passing; old records recalled in a profile; sales, box office or stock records unless called a world record; and anything vague.\n" +
+    "Stunt records are out of scope: records staged mainly to set a record, such as the most of something done in one minute or one hour, the largest of something assembled, built, cooked or poured for an event, mass-participation gatherings, and novelty body records (longest nails, most piercings, most tattoos). Competition results in sports, and records in nature, animals, science, space, engineering, money and culture, are in scope. For a stunt record set is_record false with reason 'stunt record'.\n" +
     "what: one sentence naming the record, the holder and the figure if given, e.g. 'Catherine Debrunner breaks the women's wheelchair marathon world record (1:33:16) at the 2026 Chicago Marathon'.\n" +
     "key: a short lowercase name for the record itself, the same for every article about the same feat, e.g. 'women wheelchair marathon debrunner'.\n" +
     "reason: a few words.\n\n" + lines;

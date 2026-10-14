@@ -163,6 +163,7 @@ async function research(sb: SupabaseClient, r: Row, cats: string[]) {
       "Check the tip against the reported link and other sources. Visitors can be wrong or joking. " +
       "Set is_record to true only if credible sources report a real record (a world record or an officially recognized record) " +
       "matching the tip. A personal best, a local or school record, a rumor or an attempt that failed is not a record. " +
+      "Stunt records are out of scope: records staged mainly to set a record, such as the most of something done in one minute or one hour, the largest of something assembled, built, cooked or poured for an event, mass-participation gatherings, and novelty body records (longest nails, most piercings, most tattoos). Competition results in sports, and records in nature, animals, science, space, engineering, money and culture, are in scope. If the tip is a stunt record, set is_record to false and start the note with 'Stunt record:'. " +
       "If the tip is real but the details are wrong, report the correct details. " +
       "If the tip's claim is false or not a record, set is_record to false and confidence to low, and say why in the note. " +
       "Never answer a false tip with a different record on the same topic.\n" +
