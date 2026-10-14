@@ -13,10 +13,14 @@
 //
 // Secrets: FB_PAGE_TOKEN (a Page access token with pages_manage_posts, plus instagram_basic and
 // instagram_content_publish for Instagram). The Page ID and Instagram account come from the token.
-// Instagram feed posts must be 4:5 to 1.91:1, so Instagram gets a 4:5 crop made by Supabase Storage.
+// Posters are 9:16, taller than either feed shows, so Facebook pads them with gray bars. Both platforms
+// get the same 4:5 crop instead (feedImage below). It is cut here, saved once to the media bucket under
+// social/, and reused after that. The cut keeps more of the bottom, where photo subjects usually sit.
+// If cutting fails, the post still goes out with the original image.
 // Body options: {"dryRun": true} shows the caption without posting; {"force": true} skips the time check;
 // {"check": true} reports which Page and Instagram account the token reaches.
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import { formatValue } from "./format.ts";
 
 const GRAPH = "https://graph.facebook.com/v23.0";
@@ -26,10 +30,32 @@ const SLOTS = [6, 12, 18]; // Chicago hours
 const fbGet = async (path: string, token: string) =>
   (await fetch(`${GRAPH}/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`)).json().catch(() => ({}));
 
-// 4:5 crop of a poster for Instagram, made on the fly by Supabase Storage image transforms.
-const igImage = (posterUrl: string) =>
-  posterUrl.split("?")[0].replace("/storage/v1/object/public/", "/storage/v1/render/image/public/") +
-  "?width=1080&height=1350&resize=cover&quality=90&format=origin";
+// The 4:5 version of a poster for the feeds (Supabase's own image transforms are not on this plan).
+async function feedImage(sb: SupabaseClient, slug: string, posterUrl: string): Promise<string> {
+  const src = posterUrl.split("?")[0];
+  try {
+    let h = 5381;
+    for (const ch of src) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+    const path = `social/${slug}-${h.toString(36)}.jpg`;
+    const pub = sb.storage.from("media").getPublicUrl(path).data.publicUrl;
+    if ((await fetch(pub, { method: "HEAD" })).ok) return pub;
+    const img = await Image.decode(new Uint8Array(await (await fetch(src)).arrayBuffer()));
+    const W = img.width, H = img.height;
+    // Already between 4:5 and 1.91:1: both feeds show it as is.
+    if (W / H >= 0.8 && W / H <= 1.91) return src;
+    let x = 0, y = 0, cw = W, ch = H;
+    if (W / H < 0.8) { ch = Math.round(W / 0.8); y = Math.round((H - ch) * 0.65); }
+    else { cw = Math.round(H * 1.91); x = Math.round((W - cw) / 2); }
+    const out = img.crop(x, y, cw, ch);
+    if (out.width > 1080) out.resize(1080, Image.RESIZE_AUTO);
+    const { error } = await sb.storage.from("media").upload(path, await out.encodeJPEG(90), { contentType: "image/jpeg", upsert: true });
+    if (error) throw new Error(error.message);
+    return pub;
+  } catch (e) {
+    console.error("feedImage failed, posting the original", slug, String(e));
+    return src;
+  }
+}
 
 type Row = {
   id: string; slug: string; title: string; holder: string | null; value_numeric: number | null; value_text: string | null;
@@ -49,12 +75,13 @@ Deno.serve(async (req) => {
   if (body?.check === true) {
     const t = Deno.env.get("FB_PAGE_TOKEN") ?? "";
     const me = await fbGet("me?fields=id,name,instagram_business_account{id,username}", t);
-    const sample = await createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
-      .from("records").select("poster_url").not("poster_url", "is", null).limit(1).single();
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const sample = await admin.from("records").select("slug,poster_url").not("poster_url", "is", null).limit(1).single();
     let crop: unknown = null;
     if (sample.data?.poster_url) {
-      const r = await fetch(igImage(sample.data.poster_url));
-      crop = { status: r.status, type: r.headers.get("content-type"), bytes: (await r.arrayBuffer()).byteLength };
+      const url = await feedImage(admin, sample.data.slug, sample.data.poster_url);
+      const r = await fetch(url);
+      crop = { url, status: r.status, type: r.headers.get("content-type"), bytes: (await r.arrayBuffer()).byteLength };
     }
     return json({ token_length: t.length, me, instagram_crop: crop });
   }
@@ -152,14 +179,15 @@ Deno.serve(async (req) => {
     `#WorldRecord #WorldRecords ${tag} #DidYouKnow #BrokenRecords`,
   ].filter((l) => l !== null).join("\n");
 
-  if (dryRun) return json({ dryRun: true, record: pick.slug, isNews, image: pick.poster_url, igImage: igImage(pick.poster_url!), message, igMessage });
+  const image = await feedImage(sb, pick.slug, pick.poster_url!);
+  if (dryRun) return json({ dryRun: true, record: pick.slug, isNews, image, message, igMessage });
 
   const token = Deno.env.get("FB_PAGE_TOKEN");
   if (!token) return json({ error: "FB_PAGE_TOKEN secret is not set" }, 500);
   // A Page token knows its own Page, so ask Facebook for the ID instead of trusting FB_PAGE_ID.
   const pageId = (await fbGet("me?fields=id", token))?.id ?? Deno.env.get("FB_PAGE_ID");
 
-  const form = new URLSearchParams({ url: pick.poster_url!.split("?")[0], caption: message, published: "true", access_token: token });
+  const form = new URLSearchParams({ url: image, caption: message, published: "true", access_token: token });
   const res = await fetch(`${GRAPH}/${pageId}/photos`, { method: "POST", body: form });
   const out = await res.json().catch(() => ({}));
   const ok = res.ok && (out.post_id || out.id);
@@ -173,7 +201,7 @@ Deno.serve(async (req) => {
   let ig: Record<string, unknown> = { skipped: "no Instagram account linked to the Page" };
   const igId = (await fbGet("me?fields=instagram_business_account", token))?.instagram_business_account?.id;
   if (igId) {
-    const c = await (await fetch(`${GRAPH}/${igId}/media`, { method: "POST", body: new URLSearchParams({ image_url: igImage(pick.poster_url!), caption: igMessage, access_token: token }) })).json().catch(() => ({}));
+    const c = await (await fetch(`${GRAPH}/${igId}/media`, { method: "POST", body: new URLSearchParams({ image_url: image, caption: igMessage, access_token: token }) })).json().catch(() => ({}));
     let published: { id?: string; error?: unknown } = {};
     if (c.id) {
       for (let i = 0; i < 10; i++) {
