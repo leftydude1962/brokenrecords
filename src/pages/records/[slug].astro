@@ -104,7 +104,27 @@ const article = record && story && {
   wordCount: story.sections.reduce((n, s) => n + s.body.split(" ").length, 0),
   citation: sources.map((s) => s.url),
 };
-const jsonLd = record && { "@context": "https://schema.org", "@graph": [breadcrumbs, article].filter(Boolean) };
+// Every record page, with or without a story: what it is about, when it was last checked, and its sources.
+const webpage = record && {
+  "@type": "WebPage",
+  "@id": `${pageUrl}#page`,
+  url: pageUrl,
+  name: title.replace(BRAND, ""),
+  description,
+  inLanguage: "en-US",
+  isPartOf: { "@id": "https://brokenrecords.com/#site" },
+  publisher: { "@id": "https://brokenrecords.com/#org" },
+  primaryImageOfPage: record.poster_url ? { "@type": "ImageObject", url: record.poster_url.split("?")[0] } : undefined,
+  dateModified: record.last_checked_at ?? record.updated_at ?? undefined,
+  lastReviewed: record.last_checked_at ?? undefined,
+  about: { "@type": "Thing", name: record.title },
+  mentions: record.holder ? { "@type": "Thing", name: record.holder } : undefined,
+  abstract: quick || undefined,
+  citation: sources.map((s) => s.url),
+  breadcrumb: breadcrumbs ? { "@id": `${pageUrl}#crumbs` } : undefined,
+};
+const crumbs = breadcrumbs && { ...breadcrumbs, "@id": `${pageUrl}#crumbs` };
+const jsonLd = record && { "@context": "https://schema.org", "@graph": [webpage, crumbs, article].filter(Boolean) };
 
 const facts = record
   ? ([

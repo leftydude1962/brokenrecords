@@ -10,6 +10,28 @@ interface Props {
 }
 const { title, description, noindex = false, jsonLd, image } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+const SITE = "https://brokenrecords.com";
+// Pages without their own image share the logo card.
+const shareImage = image ? image.split("?")[0] : `${SITE}/og-default.png`;
+// Who publishes the site and how to search it. On every page, so search engines and AI assistants
+// can tie each record page to one publisher. Page-specific entries (jsonLd) are added alongside.
+const siteLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization", "@id": `${SITE}/#org`, name: "Broken Records", url: `${SITE}/`,
+      logo: { "@type": "ImageObject", url: `${SITE}/logo.png`, width: 512, height: 512 },
+      email: "info@brokenrecords.com",
+      description: "A world records website that tracks current records in sports, science, nature, space and engineering, with sources and the date each record was last checked.",
+      parentOrganization: { "@type": "Organization", name: "Mohr Creative Group", url: "https://mohrcreativegroup.com" },
+    },
+    {
+      "@type": "WebSite", "@id": `${SITE}/#site`, name: "Broken Records", url: `${SITE}/`, inLanguage: "en-US",
+      publisher: { "@id": `${SITE}/#org` },
+      potentialAction: { "@type": "SearchAction", target: `${SITE}/search?q={search_term_string}`, "query-input": "required name=search_term_string" },
+    },
+  ],
+};
 ---
 <!doctype html>
 <html lang="en">
@@ -25,8 +47,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    {image && <meta property="og:image" content={image.split("?")[0]} />}
-    <meta name="twitter:card" content={image ? "summary_large_image" : "summary"} />
+    <meta property="og:image" content={shareImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={shareImage} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -34,6 +57,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
       href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
       rel="stylesheet"
     />
+    <script type="application/ld+json" set:html={JSON.stringify(siteLd)} />
     {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
   </head>
   <body>

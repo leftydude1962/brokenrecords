@@ -25,17 +25,10 @@ const total = sections.reduce((n, s) => n + (s.count ?? 0), 0);
 const thisWeek = latest.days === 7 ? latest.items.length : 0;
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  name: "Broken Records",
-  url: "https://brokenrecords.com",
-};
 ---
 <Base
   title="Broken Records: world records, kept current"
   description="World records in sports, nature, architecture, animals, people, science, space, entertainment, food and money. Every record links to its sources."
-  jsonLd={jsonLd}
   image={featured.find((r) => r.poster_url)?.poster_url}
 >
   <section class="band hero">

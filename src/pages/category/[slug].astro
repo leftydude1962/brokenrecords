@@ -31,9 +31,31 @@ const title = cat ? `${name} world records | Broken Records` : "Category not fou
 const description = cat
   ? `${records.length} current world records in ${name.toLowerCase()}, with holders, values and sources.`
   : "This category does not exist.";
+const catUrl = `https://brokenrecords.com/category/${slug}`;
+const jsonLd = cat && records.length ? {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "CollectionPage", "@id": `${catUrl}#page`, url: catUrl, name: `${name} world records`, description,
+      inLanguage: "en-US", isPartOf: { "@id": "https://brokenrecords.com/#site" },
+      mainEntity: {
+        "@type": "ItemList", numberOfItems: records.length,
+        itemListElement: records.slice(0, 100).map((r, i) => ({ "@type": "ListItem", position: i + 1, url: `https://brokenrecords.com/records/${r.slug}`, name: r.title })),
+      },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Broken Records", item: "https://brokenrecords.com/" },
+        ...(!isSection && section ? [{ "@type": "ListItem", position: 2, name: section.name, item: `https://brokenrecords.com/category/${section.slug}` }] : []),
+        { "@type": "ListItem", position: !isSection && section ? 3 : 2, name, item: catUrl },
+      ],
+    },
+  ],
+} : undefined;
 const image = records.find((r) => r.featured && r.poster_url)?.poster_url ?? records.find((r) => r.poster_url)?.poster_url;
 ---
-<Base title={title} description={description} noindex={!cat || records.length === 0} image={image}>
+<Base title={title} description={description} noindex={!cat || records.length === 0} image={image} jsonLd={jsonLd}>
   <section class="band">
     <div class="wrap">
       <nav class="crumbs" aria-label="Breadcrumb">
