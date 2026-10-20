@@ -164,6 +164,7 @@ async function research(sb: SupabaseClient, r: Row, cats: string[]) {
       "Set is_record to true only if credible sources report a real record (a world record or an officially recognized record) " +
       "matching the tip. A personal best, a local or school record, a rumor or an attempt that failed is not a record. " +
       "Stunt records are out of scope: records staged mainly to set a record, such as the most of something done in one minute or one hour, the largest of something assembled, built, cooked or poured for an event, mass-participation gatherings, and novelty body records (longest nails, most piercings, most tattoos). Competition results in sports, and records in nature, animals, science, space, engineering, money and culture, are in scope. If the tip is a stunt record, set is_record to false and start the note with 'Stunt record:'. " +
+      "Weather and climate records count only as all-time records for the whole world or for a whole country, for example the highest temperature ever recorded in Canada. Leave out daily, monthly or seasonal records (a record high for a date), and weather records for a city, town, state, province or region. If the tip is one of those, set is_record to false and start the note with 'Local or daily weather:'. " +
       "If the tip is real but the details are wrong, report the correct details. " +
       "If the tip's claim is false or not a record, set is_record to false and confidence to low, and say why in the note. " +
       "Never answer a false tip with a different record on the same topic.\n" +

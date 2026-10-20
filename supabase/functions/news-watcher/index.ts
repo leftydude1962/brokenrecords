@@ -89,10 +89,15 @@ function base(v: number | string | null | undefined, unit: string | null | undef
   return b ? [b[0], Number(v) * b[1]] : [u, Number(v)];
 }
 
+// Holder words without possessives: "NASA's" and "NASA’s" become "nasa", not "nasa s".
+function holderWords(s: string | null | undefined): string[] {
+  return norm((s ?? "").replace(/['’]s\b/gi, "")).split(" ").filter(Boolean);
+}
+
 // "NASA Perseverance rover" and "NASA Perseverance Mars rover" name the same holder:
 // every word of the shorter name appears in the longer one.
 function sameHolder(a: string | null | undefined, b: string | null | undefined): boolean {
-  const x = norm(a).split(" ").filter(Boolean), y = norm(b).split(" ").filter(Boolean);
+  const x = holderWords(a), y = holderWords(b);
   if (!x.length || !y.length) return false;
   const [s, l] = x.length <= y.length ? [x, new Set(y)] : [y, new Set(x)];
   return s.every((w) => l.has(w));
@@ -119,6 +124,35 @@ function beats(newV: number, oldV: number, dir: string | null) {
   return dir === "lower" ? newV < oldV : newV > oldV;
 }
 
+// Event variants that make a claim a different record. If the claim's title, value text or
+// source URLs name one of these and the tracked record's title does not, it is not the same
+// event (on Oct 17 a 22.75 s short-course 50 m free replaced the long-course record).
+const VARIANTS = [
+  /short[\s-]*course|\bscm\b|\b25[\s-]*m(etre|eter)?s?[\s-]*pool/i,
+  /\bindoor\b/i,
+  /\bjunior\b|\bu-?(18|20|23)\b/i,
+  /\bmasters?\b/i,
+  /\bwheelchair\b|\bt\d{2}\b/i,
+  /\brelay\b/i,
+  /\bmixed\b/i,
+  /\baverage\b/i,
+];
+function eventMismatch(rec: Rec, it: Item): boolean {
+  const recText = `${rec.title} ${rec.slug}`;
+  const itText = `${it.title ?? ""} ${it.value_text ?? ""} ${(it.source_urls ?? []).join(" ")}`;
+  return VARIANTS.some((re) => re.test(itText) && !re.test(recText));
+}
+
+// A time is better when lower (a race, a speedrun), unless the title says longest/most/oldest.
+// Speeds like km/h stay "higher" even when the title says fastest.
+const TIME_UNITS = new Set(["s", "sec", "seconds", "min", "minutes", "h", "hours", "days"]);
+function directionFor(title: string, unit: string): "higher" | "lower" {
+  const u = unit.trim().toLowerCase();
+  if (/\b(shortest|youngest|smallest|lightest|lowest)\b/i.test(title)) return "lower";
+  if (TIME_UNITS.has(u) && !/\b(longest|most|oldest|highest|greatest|largest)\b/i.test(title)) return "lower";
+  return "higher";
+}
+
 async function askPerplexity(categories: string[], records: Rec[], recency: string) {
   const list = records.map((r) => `${r.slug} | ${r.title} | ${r.holder} | ${r.value_numeric} ${r.unit}`).join("\n");
   const system =
@@ -128,6 +162,9 @@ async function askPerplexity(categories: string[], records: Rec[], recency: stri
     "Leave out stunt records: records staged mainly to set a record, such as the most of something done in one minute, " +
     "the largest of something assembled, built, cooked or poured for an event, crowd gatherings, human images, and novelty body records. " +
     "Competition results in sports, and records in nature, science, space, engineering, money and culture, are in scope. " +
+    "Weather and climate records count only as all-time records for the whole world or for a whole country, for example " +
+    "the highest temperature ever recorded in Canada. Leave out daily, monthly or seasonal records (a record high for a date), " +
+    "and weather records for a city, town, state, province or region. " +
     "If nothing qualifies, return an empty items list.";
   const user =
     `Time window: the past ${recency}. Areas: ${categories.join(", ")}.\n\n` +
@@ -220,13 +257,25 @@ const STUNT = [
   /\blargest\b.*\b(assembled|cooked|baked|poured|made by)\b/i,
   /\b(longest|most) (fingernails|nails|piercings|tattoos)\b/i,
 ];
-const isStunt = (title: string) => STUNT.some((re) => re.test(title));
+// Weather records count only as all-time records for the world or a whole country: no daily, monthly
+// or seasonal records ("Record high for October 13 in Detroit"), and no city, town or state records.
+const LOCAL_WEATHER = [
+  /\b(for|on) (january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+  /\bfor the (date|day|month)\b/i,
+  /\b(daily|record) (high|low|rainfall|snowfall)\b/i,
+];
+const isStunt = (title: string) => STUNT.some((re) => re.test(title)) || LOCAL_WEATHER.some((re) => re.test(title));
 
 async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<string>, bySlug: Map<string, Rec>, catId: Map<string, string>, dryRun: boolean) {
-  if (!(it.record_slug && bySlug.has(it.record_slug)) && isStunt(it.title ?? "")) return { title: it.title, outcome: "skipped: stunt record" };
-  // Only URLs that appeared in the actual search results count. The model's own list can't add sources.
-  const urls = [...new Set((it.source_urls ?? []).filter((u) => cited.has(u)))];
-  const fallback = urls.length ? urls : [...cited];
+  if (!(it.record_slug && bySlug.has(it.record_slug)) && isStunt(it.title ?? "")) return { title: it.title, outcome: "skipped: stunt record or local/daily weather" };
+  // Only the item's own URLs that appeared in the actual search results count as sources.
+  // The whole search's citations are never used: they often cover other stories (on Oct 16 a
+  // cycling record got bird-watching and rucking articles as its sources).
+  const cleanUrl = (u: string) => String(u).replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+  const citedClean = new Set([...cited].map(cleanUrl));
+  const own = [...new Set((it.source_urls ?? []).filter((u) => typeof u === "string" && /^https?:\/\//i.test(u)))];
+  const urls = own.filter((u) => citedClean.has(cleanUrl(u)));
+  const fallback = urls;
   const sites = new Set(fallback.map(site).filter(Boolean));
   const rec = it.record_slug ? bySlug.get(it.record_slug) : undefined;
   const oldV = rec?.value_numeric == null ? null : Number(rec.value_numeric);
@@ -234,6 +283,7 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
   const checks = {
     matched_record: rec?.slug ?? null,
     same_unit: !!rec && rec.unit === it.unit,
+    same_event: !!rec && !eventMismatch(rec, it),
     beats_current: !!rec && oldV != null && beats(it.value_numeric, oldV, rec.better_direction),
     within_25_percent: !!rec && oldV != null && oldV !== 0 && Math.abs(it.value_numeric - oldV) / Math.abs(oldV) <= 0.25,
     independent_sites: sites.size,
@@ -242,7 +292,7 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
   // Same holder, about the same figure, about the same date: one feat reported two ways
   // (e.g. 1,295.8 kg vs "2,856.8 lb, about 1,296.5 kg"). Not a new record.
   const same_feat = !!rec && sameFeat(rec, it, oldV);
-  const pass = checks.matched_record && checks.same_unit && checks.beats_current && checks.within_25_percent && checks.has_source && !same_feat;
+  const pass = checks.matched_record && checks.same_unit && checks.same_event && checks.beats_current && checks.within_25_percent && checks.has_source && !same_feat;
   const summary = { title: it.title, holder: it.holder, value: `${it.value_numeric} ${it.unit}`, checks: { ...checks, same_feat }, pass };
   if (dryRun) return summary;
 
@@ -255,29 +305,31 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
 
   // A record we don't track yet becomes a new record, if it is complete and not a duplicate title.
   const slug = it.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+  // A slug already used by a hidden or superseded record means we removed or replaced that claim before.
+  const { data: slugRows } = await sb.from("records").select("id").eq("slug", slug).limit(1);
   // A differently worded title for a record we already have (same category, holder and figure) is taken too.
   const titleTaken = [...bySlug.values()].some((r) =>
     r.title.toLowerCase() === it.title.trim().toLowerCase() ||
     (r.category_id === catId.get(it.category_slug) && r.value_numeric != null && Number(r.value_numeric) === it.value_numeric &&
       norm(r.holder) !== "" && norm(r.holder) === norm(it.holder)) ||
     sameFigure(r, it)
-  ) || bySlug.has(slug);
+  ) || bySlug.has(slug) || !!slugRows?.length;
   const isNew = !rec && AUTO_PUBLISH && checks.has_source && catId.has(it.category_slug) && Number.isFinite(it.value_numeric)
     && !!it.title?.trim() && !!it.holder?.trim() && !!it.unit?.trim() && !!slug && !titleTaken;
 
   const publish = pass && AUTO_PUBLISH && rec;
-  const { error: cErr } = await sb.from("candidates").insert({
+  const { data: cand, error: cErr } = await sb.from("candidates").insert({
     record_id: rec?.id ?? null,
     proposed_holder: it.holder,
     proposed_value_numeric: it.value_numeric,
     proposed_value_text: it.value_text,
     unit: it.unit,
     category_guess: it.category_slug,
-    source_urls: fallback.slice(0, 8),
+    source_urls: (urls.length ? urls : own).slice(0, 8),
     claude_json: { ...it, model: "perplexity/sonar" },
     checks_passed: checks,
     status: publish || isNew ? "auto_published" : "pending",
-  });
+  }).select("id").single();
   if (cErr) return { ...summary, status: "error", error: cErr.message };
 
   if (isNew) {
@@ -285,11 +337,15 @@ async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<
     const { data: created, error: nErr } = await sb.from("records").insert({
       slug, category_id: catId.get(it.category_slug), title: it.title.trim(), holder: it.holder.trim(),
       value_numeric: it.value_numeric, value_text: it.value_text || null, unit: it.unit.trim(),
-      better_direction: it.unit.trim() === "s" && /fastest|quickest|shortest/i.test(it.title) ? "lower" : "higher", achieved_on: it.achieved_on, status: "published",
+      better_direction: directionFor(it.title, it.unit), achieved_on: it.achieved_on, status: "published",
       last_verified_at: now, updated_at: now,
       visual_prompt: `A cinematic scene that represents this world record: ${it.title.trim()}. No people's faces.`,
     }).select("id").single();
-    if (nErr) return { ...summary, status: "error", error: nErr.message };
+    if (nErr) {
+      // The record was not created, so the candidate goes back to review instead of claiming it was published.
+      if (cand?.id) await sb.from("candidates").update({ status: "pending" }).eq("id", cand.id);
+      return { ...summary, status: "error", error: nErr.message };
+    }
     await sb.from("record_sources").insert(fallback.slice(0, 4).map((u) => ({ record_id: created.id, url: u, publisher: site(u), license: null })));
     bySlug.set(slug, { id: created.id, slug, title: it.title.trim(), holder: it.holder.trim(), value_numeric: it.value_numeric, unit: it.unit.trim(), category_id: catId.get(it.category_slug) } as Rec);
     return { ...summary, status: "created", slug };
