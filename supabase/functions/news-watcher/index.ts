@@ -162,7 +162,7 @@ async function askPerplexity(categories: string[], records: Rec[], recency: stri
     "Leave out stunt records: records staged mainly to set a record, such as the most of something done in one minute, " +
     "the largest of something assembled, built, cooked or poured for an event, crowd gatherings, human images, and novelty body records. " +
     "Competition results in sports, and records in nature, science, space, engineering, money and culture, are in scope. " +
-    "Weather and climate records count only as all-time world records: the most extreme ever measured anywhere on Earth, such as the highest temperature, the most rainfall or snowfall in one hour, one day or one year, the heaviest hailstone or the strongest wind gust. Leave out national, state and city records (for example the highest temperature ever recorded in Canada), and calendar records such as a record high for a date or the hottest September on record. " +
+    "Weather and climate records count only as all-time records for the whole world or for the whole United States: the most extreme ever measured, such as the highest temperature, the most rainfall or snowfall in one hour, one day or one year, the heaviest hailstone or the strongest wind gust. Leave out national records for other countries (for example the highest temperature ever recorded in Canada), state, province, city and town records, and calendar records such as a record high for a date or the hottest September on record. " +
     "If nothing qualifies, return an empty items list.";
   const user =
     `Time window: the past ${recency}. Areas: ${categories.join(", ")}.\n\n` +
@@ -255,18 +255,18 @@ const STUNT = [
   /\blargest\b.*\b(assembled|cooked|baked|poured|made by)\b/i,
   /\b(longest|most) (fingernails|nails|piercings|tattoos)\b/i,
 ];
-// Weather records count only as all-time world records: no calendar records ("Record high for October 13
-// in Detroit"), and no national, state or city records ("Largest hailstone in the US").
+// Weather records count only as all-time world or US records: no calendar records ("Record high for October 13
+// in Detroit"), no other countries' national records, and no state or city records.
 const LOCAL_WEATHER = [
   /\b(for|on) (january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
   /\bfor the (date|day|month)\b/i,
   /\b(daily|record) (high|low|rainfall|snowfall)\b/i,
-  /\b(temperature|rain|rainfall|snow|snowfall|hail|hailstone|wind|gust|tornado|heat|cold)\b.*(\((us|u\.s\.|uk|national|state)\)|\bin (the )?(us|u\.s\.|united states|uk)\b|\b(national|state) record\b)/i,
+  /\b(temperature|rain|rainfall|snow|snowfall|hail|hailstone|wind|gust|tornado|heat|cold)\b.*(\((uk|state)\)|\bin (the )?uk\b|\bstate record\b)/i,
 ];
 const isStunt = (title: string) => STUNT.some((re) => re.test(title)) || LOCAL_WEATHER.some((re) => re.test(title));
 
 async function handle(sb: ReturnType<typeof createClient>, it: Item, cited: Set<string>, bySlug: Map<string, Rec>, catId: Map<string, string>, dryRun: boolean) {
-  if (!(it.record_slug && bySlug.has(it.record_slug)) && isStunt(it.title ?? "")) return { title: it.title, outcome: "skipped: stunt record or not a world weather record" };
+  if (!(it.record_slug && bySlug.has(it.record_slug)) && isStunt(it.title ?? "")) return { title: it.title, outcome: "skipped: stunt record or not a world or US weather record" };
   // Only the item's own URLs that appeared in the actual search results count as sources.
   // The whole search's citations are never used: they often cover other stories (on Oct 16 a
   // cycling record got bird-watching and rucking articles as its sources).
