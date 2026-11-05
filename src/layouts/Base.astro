@@ -11,6 +11,9 @@ interface Props {
 const { title, description, noindex = false, jsonLd, image } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const SITE = "https://brokenrecords.com";
+// Cloudflare Web Analytics site token (public by design). The beacon runs only in real browsers,
+// so it counts people and not crawlers. Empty string turns it off.
+const CF_BEACON_TOKEN = "";
 // Pages without their own image share the logo card.
 const shareImage = image ? image.split("?")[0] : `${SITE}/og-default.png`;
 // Who publishes the site and how to search it. On every page, so search engines and AI assistants
@@ -88,6 +91,14 @@ const siteLd = {
         <p class="fine">A brand of <a href="https://mohrcreativegroup.com" rel="noopener">Mohr Creative Group</a> · <a href="/privacy">Privacy</a></p>
       </div>
     </footer>
+    {CF_BEACON_TOKEN && (
+      <script
+        is:inline
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={JSON.stringify({ token: CF_BEACON_TOKEN })}
+      ></script>
+    )}
   </body>
 </html>
 
